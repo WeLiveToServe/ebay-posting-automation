@@ -1,0 +1,5 @@
+openai
+pydantic
+requests
+pillow
+llm-agent-utilities @ git+https://github.com/WeLiveToServe/LLM-agent-utilities.git
