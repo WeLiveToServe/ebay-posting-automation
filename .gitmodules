@@ -1,0 +1,3 @@
+[submodule "llm_agent_utilities"]
+	path = llm_agent_utilities
+	url = https://github.com/WeLiveToServe/llm_agent_utilities.git
