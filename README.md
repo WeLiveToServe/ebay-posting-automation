@@ -1,59 +1,124 @@
 # eBay Posting Automation
 
-This repository automates **eBay listing creation** from minimal input such as book or product images.  
-It generates structured data fields — including **title, description, price, and auction/"Buy It Now" options** — and then **posts automatically to eBay** via their API.
-
 ## Overview
+This repository automates the creation and posting of eBay listings using OpenAI’s multimodal models.  
+Images of used books are analyzed to extract metadata (title, author, edition, publisher, year, condition, etc.), which is then structured into eBay-ready listing JSON.  
 
-The system connects with OpenAI's API and the **Agents SDK**, leveraging agent creation utilities from the companion repository **`LLM-agent-utilities`**.  
-This allows the pipeline to dynamically create and configure agents using YAML and JSON definitions. The `LLM-agent-utilities` repo provides the reusable logic for:
+The system produces:
+- Structured description fields  
+- Dynamic pricing and condition metadata  
+- Automatic post formatting for “Buy It Now” or “Auction” modes  
 
-- Generating structured OpenAI agents  
-- Converting image and text inputs into schema-based JSON data  
-- Ensuring all required eBay fields (title, price, condition, etc.) are validated  
-- Deploying agent outputs to downstream APIs (eBay in this case)
-
-## Core Workflow
-
-1. **Image Input:** User provides an image of a book or other item.  
-2. **Agent Invocation:** The `ebay-posting-agent` calls functions from `LLM-agent-utilities` to analyze the image.  
-3. **Data Structuring:** Extracted details (title, author, condition, price suggestion) are converted to structured JSON.  
-4. **eBay Posting:** The system connects to eBay's API to publish the listing automatically.  
-
-## Recommended Directory Structure
-
-```
-ebay-posting-automation/
-├── main.py                    # Entrypoint for running the automation
-├── agents/
-│   └── ebay_posting_agent.yaml # Agent definition calling utilities from LLM-agent-utilities
-├── tools/
-│   ├── image_processing.py     # Image parsing and OCR logic
-│   ├── listing_formatter.py    # Converts raw output to structured eBay fields
-│   └── ebay_api_client.py      # Handles API calls for posting and updating listings
-├── workflows/
-│   └── prefect_flow.py         # (Optional) Prefect-based automation for scheduling & monitoring
-├── llm_agent_utilities/        # Submodule link to the shared LLM-agent-utilities repo
-├── requirements.txt
-└── README.md
-```
-
-## Dependencies
-
-- Python ≥ 3.10  
-- `openai` (Agents SDK)  
-- `pydantic`  
-- `requests`  
-- `pillow`  
-- `llm-agent-utilities` (linked as submodule or local package)
-
-## Future Enhancements
-
-- Add **Prefect** flow for daily status checks on eBay postings.  
-- Extend agent logic to include **pricing prediction** based on market data.  
-- Add **error logging and retry mechanisms** for failed API calls.
+The project is modular and built around **agent YAML definitions** and **tool scripts** for extensibility.
 
 ---
 
-**Author:** Keith Harmon  
-**Workspace:** WeLiveToServe  
+## Integration with `llm_agent_utilities`
+
+### Purpose
+`llm_agent_utilities` contains the common logic for creating, running, and managing LLM agents.  
+Rather than duplicating agent orchestration code, this repo **imports those utilities directly**.  
+This ensures:
+- All agents (across multiple projects) use the same initialization and execution logic.  
+- No manual version control across repos.  
+- Immediate access to updates and shared improvements.  
+
+### Structure
+
+Local structure:
+```
+C:\Users\Keith\dev\projects\
+├── ebay-posting-automation\
+│   ├── main.py
+│   ├── book-identifier-agent.py
+│   ├── agent-yamls\
+│   │   └── book_identifier.yaml
+│   ├── tools\
+│   │   └── image_processing.py
+│   └── llm_agent_utilities\  ← imported here (shared repo)
+└── LLM-agent-utilities\
+```
+
+> The `llm_agent_utilities` directory may either exist as a submodule inside the eBay repo or as a sibling repo referenced via `sys.path`.
+
+---
+
+## Import Configuration
+
+To access the shared agent functions:
+```python
+import sys, os
+sys.path.append(os.path.abspath("../LLM-agent-utilities"))
+from llm_agent_utilities import load_agent
+```
+
+### Explanation
+- `sys.path.append()` temporarily adds the utilities repo to Python’s import path.  
+- This allows direct imports like:
+  ```python
+  from llm_agent_utilities import load_agent
+  ```
+- Python then treats the `llm_agent_utilities` package as if it were installed globally.  
+- No need to publish or install it via `pip`; you always use the latest local version.
+
+---
+
+## Example Usage
+
+Run an agent that identifies books from images:
+
+```powershell
+python book-identifier-agent.py
+```
+
+That script loads the YAML agent configuration:
+```yaml
+agent-yamls/book_identifier.yaml
+```
+and executes:
+```python
+from main import run_agent
+run_agent("agent-yamls/book_identifier.yaml", {"image_folder": "images"})
+```
+
+The agent calls OpenAI’s model through `llm_agent_utilities` functions and returns structured JSON:
+```json
+{
+  "title": "The Great Gatsby",
+  "author": "F. Scott Fitzgerald",
+  "edition": "First",
+  "year": "1925",
+  "publisher": "Scribner"
+}
+```
+
+---
+
+## Future Expansion
+
+This repo is designed to grow by simply adding new:
+- **Agent YAMLs** in `/agent-yamls/`
+- **Wrapper scripts** like `/book-identifier-agent.py`
+- **Tools** in `/tools/` for custom pre/post-processing
+
+Once stable, the workflow can be automated with **Prefect** to:
+- Trigger agents on schedule  
+- Monitor eBay listing status daily  
+- Generate summaries or alerts automatically
+
+---
+
+## Requirements
+
+See `requirements.txt` for dependencies.
+
+Install them:
+```powershell
+pip install -r requirements.txt
+```
+
+Ensure your OpenAI key is set:
+```powershell
+setx OPENAI_API_KEY "your_api_key_here"
+```
+Then open a new PowerShell session before running the scripts.

@@ -1,5 +1,11 @@
 openai
-pydantic
+openai-agents @ git+https://github.com/openai/openai-agents-python.git
 requests
-pillow
-llm-agent-utilities @ git+https://github.com/WeLiveToServe/LLM-agent-utilities.git
+numpy
+rich
+pydub
+sounddevice
+soundfile
+keyboard
+pyperclip
+beautifulsoup4

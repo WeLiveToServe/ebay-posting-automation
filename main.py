@@ -1,7 +1,9 @@
 # main.py
 import sys, os
 sys.path.append(os.path.abspath(".llm_agent-utilities"))
-from llm_agent_utilities import load_agent
+from llm_agent_utilities.openai_model_call import (
+    load_agent_from_yaml as load_agent
+)
 
 def run_agent(agent_yaml: str, input_payload: dict):
     """Generic agent runner."""
