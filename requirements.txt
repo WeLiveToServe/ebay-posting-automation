@@ -1,4 +1,3 @@
-openai
 openai-agents @ git+https://github.com/openai/openai-agents-python.git
 requests
 numpy
