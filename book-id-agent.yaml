@@ -96,3 +96,58 @@ agent:
       blurb: {type: string}
       condition: {type: string}
       details: {type: string}
+  csv_output:
+    enabled: true
+    include_header: true
+    columns:
+      - '*Action(SiteID=US|Country=US|Currency=USD|Version=1193|CC=UTF-8)'
+      - CustomLabel
+      - '*Category'
+      - '*Title'
+      - Subtitle
+      - '*ConditionID'
+      - '*Description'
+      - '*Format'
+      - '*Duration'
+      - '*StartPrice'
+      - BuyItNowPrice
+      - '*Quantity'
+      - '*Location'
+      - ShippingType
+      - 'ShippingService-1:Option'
+      - 'ShippingService-1:Cost'
+      - '*DispatchTimeMax'
+      - '*ReturnsAcceptedOption'
+      - ReturnsWithinOption
+      - RefundOption
+      - ShippingCostPaidByOption
+    defaults:
+      '*Action(SiteID=US|Country=US|Currency=USD|Version=1193|CC=UTF-8)': Add
+      CustomLabel: ''
+      '*Category': '29223'
+      '*ConditionID': '3000'
+      '*Format': FixedPrice
+      '*Duration': GTC
+      '*StartPrice': ''
+      BuyItNowPrice: ''
+      '*Quantity': '1'
+      '*Location': 'Los Angeles, CA'
+      ShippingType: Flat
+      'ShippingService-1:Option': USPSMedia
+      'ShippingService-1:Cost': '0.00'
+      '*DispatchTimeMax': '3'
+      '*ReturnsAcceptedOption': ReturnsAccepted
+      ReturnsWithinOption: Days_30
+      RefundOption: MoneyBack
+      ShippingCostPaidByOption: Buyer
+    field_map:
+      '*Title': '{title}'
+      Subtitle: 'By {author}'
+      '*Description': |
+        {blurb}
+
+        Condition Notes:
+        {condition}
+
+        Collector Details:
+        {details}

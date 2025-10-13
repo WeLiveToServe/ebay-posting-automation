@@ -1,5 +1,7 @@
 # test-open-yaml-agent-builder.py
 import base64
+import csv
+import io
 import mimetypes
 import os
 import sys
@@ -110,6 +112,104 @@ def save_json_output(content: Any) -> None:
         json.dump(payload, handle, ensure_ascii=False, indent=2)
 
     print(f"Saved response to {output_path}")
+
+
+def sanitize_value(value: Any) -> str:
+    """Convert the provided value to a trimmed string, preserving internal newlines."""
+    if value is None:
+        return ""
+    if isinstance(value, (int, float)):
+        return str(value)
+    text = str(value)
+    return text.strip()
+
+
+class SafeDict(dict):
+    """Dictionary returning empty strings for missing keys when formatting."""
+
+    def __missing__(self, key: str) -> str:
+        return ""
+
+
+def parse_structured_output(output_text: str) -> dict[str, Any] | None:
+    """Attempt to load the model output as a dictionary."""
+    if not output_text:
+        return None
+
+    try:
+        parsed = json.loads(output_text)
+    except json.JSONDecodeError:
+        return None
+
+    return parsed if isinstance(parsed, dict) else None
+
+
+def build_csv_output(data: dict[str, Any], csv_config: dict[str, Any]) -> str | None:
+    """Generate a CSV string using configured columns, defaults, and field mappings."""
+    columns = csv_config.get("columns")
+    if not isinstance(columns, list) or not columns:
+        return None
+
+    defaults = csv_config.get("defaults")
+    if not isinstance(defaults, dict):
+        defaults = {}
+
+    field_map = csv_config.get("field_map")
+    if not isinstance(field_map, dict):
+        field_map = {}
+
+    safe_data = SafeDict({key: sanitize_value(value) for key, value in data.items()})
+    row: list[str] = []
+    for column in columns:
+        value: str | None = None
+        mapping = field_map.get(column)
+        if isinstance(mapping, str):
+            value = mapping.format_map(safe_data)
+        elif isinstance(mapping, list):
+            parts = [
+                sanitize_value(data.get(name))
+                for name in mapping
+                if sanitize_value(data.get(name))
+            ]
+            value = " ".join(parts)
+
+        if value is None:
+            value = sanitize_value(data.get(column))
+
+        if not value:
+            value = sanitize_value(defaults.get(column))
+
+        row.append(value)
+
+    buffer = io.StringIO()
+    writer = csv.writer(buffer, quoting=csv.QUOTE_MINIMAL, lineterminator="\n")
+
+    if csv_config.get("include_header"):
+        writer.writerow(columns)
+
+    writer.writerow(row)
+    return buffer.getvalue()
+
+
+def maybe_print_csv_output(agent_output: str, agent_config: dict[str, Any]) -> None:
+    """Print an eBay-ready CSV snippet when configuration and data allow."""
+    csv_config = agent_config.get("csv_output")
+    if not isinstance(csv_config, dict) or not csv_config.get("enabled"):
+        return
+
+    parsed = parse_structured_output(agent_output)
+    if parsed is None:
+        print("CSV output skipped: model response was not valid JSON.", file=sys.stderr)
+        return
+
+    csv_text = build_csv_output(parsed, csv_config)
+    if not csv_text:
+        print("CSV output skipped: configuration incomplete or missing columns.", file=sys.stderr)
+        return
+
+    print("\n--- eBay CSV snippet ---")
+    print(csv_text.rstrip("\n"))
+    print("--- end eBay CSV snippet ---\n")
 
 
 def drop_nulls(value: Any) -> Any:
@@ -264,6 +364,7 @@ def main() -> None:
             final_output = output_text if output_text else str(response)
             print(final_output)
             save_json_output(final_output)
+            maybe_print_csv_output(final_output, agent_config)
         else:
             messages = build_chat_messages(system_prompt, user_instruction, image_paths)
             if not messages:
@@ -295,6 +396,7 @@ def main() -> None:
             final_output = reply_text if reply_text else "No content returned from model."
             print(final_output)
             save_json_output(final_output)
+            maybe_print_csv_output(final_output, agent_config)
     except OpenAIError as exc:
         print(f"OpenAI API error: {exc}", file=sys.stderr)
 
