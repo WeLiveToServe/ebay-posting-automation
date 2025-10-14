@@ -205,6 +205,15 @@ def find_insert_row(sheet: Worksheet, title_col: int) -> int:
     return row_index
 
 
+def truncate_for_excel(value: Any, limit: int) -> str:
+    text = normalise_text(value)
+    if len(text) <= limit:
+        return text
+    if limit <= 3:
+        return text[:limit]
+    return text[: limit - 3].rstrip() + "..."
+
+
 def build_row(header_order: list[str], payload: Mapping[str, Any]) -> dict[str, Any]:
     row = {header: "" for header in header_order}
     row.update({key: value for key, value in DEFAULT_VALUES.items() if key in row})
@@ -217,7 +226,10 @@ def build_row(header_order: list[str], payload: Mapping[str, Any]) -> dict[str, 
     if "Title" in row:
         row["Title"] = row.get("Title", "")
     if "C:Book Title" in row:
-        row["C:Book Title"] = row.get("Title", "")
+        row["C:Book Title"] = truncate_for_excel(row.get("Title", ""), 50)
+    if "C:Author" in row:
+        source_author = row.get("C:Author") or payload_lower.get("author")
+        row["C:Author"] = truncate_for_excel(source_author, 50)
     if "Description" in row:
         row["Description"] = build_description(payload_lower)
 

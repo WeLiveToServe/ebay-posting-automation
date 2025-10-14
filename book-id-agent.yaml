@@ -1,153 +1,115 @@
 agent:
   name: book_identifier_test
-  description: "Identifies detailed bibliographic info from supplied book images."
+  description: "Identifies bibliographic facts, condition, and pricing guidance for eBay book listings."
   model:
     type: o3
-    temperature: null
-    top_p: null
-    max_tokens: null
-    presence_penalty: null
-    frequency_penalty: null
-    stop: null
-    n: null
-    stream: null
-    logit_bias: null
-    response_format: null
-    seed: null
-    tools: null
-    tool_choice: null
-    user: null
     max_output_tokens: 2000
     reasoning:
       effort: medium
-    metadata: null
-    parallel_tool_calls: null
-    previous_response_id: null
   system_prompt: |
-    You are an expert bibliographic identification agent.
-    Given one or more images of a book, identify:
-    - Title
-    - Author
-    - Edition - you must be specific as to exact edition, eg First Edition, Second Edition, 1925 reprint, illustrated, etc.
-    - Year
-    - Publisher - include city and country if available
-    - Blurb - write a short description of the book appropriate to selling the book on ebay
-    - Conditon - make brief notes on condition 50 words or less
-    - Details: write a detailed list in bulleted format for a thorough list of information a book collector would appreciate, here
-    are several examples of the detail listing I would like:
-    ------
-    Bibliographic Details
-    Author: P. G. Wodehouse
-    Title: A Prefect’s Uncle
-    Illustrator: R. Noel Pocock (eight full-page illustrations; all present)
-    Publisher / Place: Adam & Charles Black, London
-    Year: 1912 Reprint subsequent to 1908 reprint. 1st Ed. was 1902.
-    Edition / Printing: 1912 Reprint
-    Format: 8vo hardcover; approx. viii + 310 pp.
-    Binding Details: Original red/orange pictorial cloth; schoolboy & luggage vignette to upper board; cricketer vignette to spine; lettered in black
-    Dust Jacket: Released as Pictorial Cloth, no DJs 
-    Notable Points: Plum's second novel. Pocock plates; unrestored copy
-    Language: English
-    Condition (conservative, ABAA-style)
-    Boards/Spine: Pictorial cloth rubbed and handled; spine sunned with fray/loss at crown & foot; corners rounded; front vignette still visible though dulled.
-    Pages/Textblock: Even age toning; scattered foxing (heaviest to prelims); local dampstain/offset visible at prelim margins; contents legible.
-    Illustrations: All eight Pocock plates present; some marginal foxing/handling.
-    Hinges/Binding: Front hinge cracked but holding; rear hinge starting; binding shaken yet complete (no loose leaves noted).
-    Edges: Toned with light dust-soiling.
-    Overall grade: Fair to Good (complete, unrestored copy in original pictorial cloth).
-    -----
-    Bibliographic Details
-    Author: P. G. Wodehouse
-    Title: Blandings Castle and Elsewhere
-    Publisher / Place: Herbert Jenkins Limited, 3 York Street, St. James’s, London S.W.1
-    Year: 1935
-    Edition / Printing: First Edition, First Printing (First printing 1935 on copyright leaf with Jenkins device)
-    Series / Universe: Blandings Castle stories (incl. “Lord Emsworth and the Girl Friend,” etc.)
-    Format: Crown 8vo hardcover; cloth; approx. 311 pp. (pagination not fully verified)
-    Binding Details: Light tan cloth; black titling to upper board & spine; Jenkins Pegasus to spine; “A Herbert Jenkins Book” crest to rear board
-    Dust Jacket: No DJ accompanied 1st Ed.
-    Notable Points: Bookseller rubber stamp to front endpaper (“City Bookstall, Ooty”); small pencil note
-    Language: English
-    Condition (conservative, ABAA-style)
-    Boards/Spine: Clean, lightly handled tan cloth; spine slightly toned; extremities rubbed; minor bumping to a corner; gentle softening at head/foot.
-    Pages/Textblock: Even age toning; a few faint spots to prelims; interiors clean and legible; bookseller’s stamp to FFEP; small pencil notation near hinge.
-    Hinges/Binding: Square and tight.
-    Edges: Toned with light dust-soil; no edge staining.
-    Dust Jacket: No DJ was included with the Jenkins 1st Ed
-    Overall grade: Very Good
-    -----
+    You are an experienced antiquarian bookseller preparing persuasive eBay listings from supplied book images and their public URLs.
 
+    Responsibilities
+    - Identify bibliographic facts: title, author, publication year, publisher & location, edition/printing, format/binding, notable features (illustrators, signatures, provenance, series), language, and other collector-relevant distinctions.
+    - Assess physical condition using the AB Bookman hierarchy (As New, Fine, Near Fine, Very Good, Good, Fair, Poor). Inspect boards and spine, text block, dust jacket, edges, hinges, markings, completeness, and odor. Grade conservatively but highlight sale-worthy strengths to support strong pricing.
+    - Map the observed grade to the correct eBay Condition ID:
+      1000 New - unread, flawless.
+      2750 Like New - looks new, read once at most, no wear.
+      3000 Very Good - lightly used, minimal wear.
+      5000 Good - noticeable wear yet sound, no missing pages.
+      6000 Acceptable - well worn, readable, may have significant cosmetic flaws.
+      Choose the closest code and mention key evidence in the condition notes.
+    - Craft outputs that motivate confident purchase decisions:
+      * blurb: 120-180 word sales copy summarising why the book is desirable.
+      * condition: ABAA-style narrative covering boards/spine, pages/text block, dust jacket, hinges, edges, markings, odors, completeness.
+      * details: collector highlights (edition points, inscriptions, provenance, rarity, market positioning).
+      * price: USD float informed by comparable sales; justify premium when condition allows.
+      * image_urls: pipe-delimited S3 URLs in listing order (primary photo first).
+    - Use concise, professional tone. Surface defects candidly while emphasising preservation, originality, and collector appeal.
 
-
-    Return only structured JSON matching the defined schema.
-
+    Always return JSON that matches the declared schema.
   user_prompt: >
-    Analyze the attached book images and produce bibliographic JSON adhering to the provided schema.
-  image_dir: images-bookfinder
-  input_mode: images_only
+    Analyze the attached book images and follow the workflow to produce structured JSON for the listing.
+  image_dir: batch-image-sets
   output_schema:
     type: object
+    required:
+      - title
+      - author
+      - blurb
+      - condition
+      - details
+      - price
+      - condition_id
+      - image_urls
     properties:
-      title: {type: string}
-      author: {type: string}
-      edition: {type: string}
-      year: {type: string}
-      publisher: {type: string}
-      blurb: {type: string}
-      condition: {type: string}
-      details: {type: string}
+      title:
+        type: string
+      author:
+        type: string
+      blurb:
+        type: string
+      condition:
+        type: string
+      details:
+        type: string
+      price:
+        type: number
+        format: float
+      condition_id:
+        type: string
+        description: "One of: 1000, 2750, 3000, 5000, 6000."
+      image_urls:
+        type: string
+        description: "Pipe-delimited list of HTTPS image URLs in display order."
+      language:
+        type: string
+      publisher:
+        type: string
+      publication_year:
+        type: string
+      edition:
+        type: string
   csv_output:
     enabled: true
     include_header: true
     columns:
-      - '*Action(SiteID=US|Country=US|Currency=USD|Version=1193|CC=UTF-8)'
-      - CustomLabel
-      - '*Category'
-      - '*Title'
-      - Subtitle
-      - '*ConditionID'
-      - '*Description'
-      - '*Format'
-      - '*Duration'
-      - '*StartPrice'
-      - BuyItNowPrice
-      - '*Quantity'
-      - '*Location'
-      - ShippingType
-      - 'ShippingService-1:Option'
-      - 'ShippingService-1:Cost'
-      - '*DispatchTimeMax'
-      - '*ReturnsAcceptedOption'
-      - ReturnsWithinOption
-      - RefundOption
-      - ShippingCostPaidByOption
+      - "*Action(SiteID=US|Country=US|Currency=USD|Version=1193)"
+      - "Category ID"
+      - "Category name"
+      - "Title"
+      - "Start price"
+      - "Quantity"
+      - "Item photo URL"
+      - "Condition ID"
+      - "Description"
+      - "Format"
+      - "Duration"
+      - "Location"
+      - "Shipping profile name"
+      - "Return profile name"
+      - "Payment profile name"
+      - "C:Author"
+      - "C:Book Title"
+      - "C:Language"
     defaults:
-      '*Action(SiteID=US|Country=US|Currency=USD|Version=1193|CC=UTF-8)': Add
-      CustomLabel: ''
-      '*Category': '29223'
-      '*ConditionID': '3000'
-      '*Format': FixedPrice
-      '*Duration': GTC
-      '*StartPrice': ''
-      BuyItNowPrice: ''
-      '*Quantity': '1'
-      '*Location': 'Los Angeles, CA'
-      ShippingType: Flat
-      'ShippingService-1:Option': USPSMedia
-      'ShippingService-1:Cost': '0.00'
-      '*DispatchTimeMax': '3'
-      '*ReturnsAcceptedOption': ReturnsAccepted
-      ReturnsWithinOption: Days_30
-      RefundOption: MoneyBack
-      ShippingCostPaidByOption: Buyer
+      "*Action(SiteID=US|Country=US|Currency=USD|Version=1193)": "Add"
+      "Category ID": "261186"
+      "Category name": "/Books & Magazines/Books"
+      "Quantity": "1"
+      "Format": "FixedPrice"
+      "Duration": "GTC"
+      "Location": "Newfields, NH"
+      "Shipping profile name": "USPS Media Mail"
+      "Return profile name": "Returns allowed within 30 days"
+      "Payment profile name": "Immediate payment managed via eBay"
+      "C:Language": "English"
     field_map:
-      '*Title': '{title}'
-      Subtitle: 'By {author}'
-      '*Description': |
-        {blurb}
-
-        Condition Notes:
-        {condition}
-
-        Collector Details:
-        {details}
+      "Title": "{title}"
+      "Start price": "{price}"
+      "Item photo URL": "{image_urls}"
+      "Condition ID": "{condition_id}"
+      "Description": "{blurb}\n\nCondition Notes:\n{condition}\n\nCollector Details:\n{details}"
+      "C:Author": "{author}"
+      "C:Book Title": "{title}"
+      "C:Language": "{language}"
