@@ -109,7 +109,7 @@ def upload_files(
             urls.append(url)
             continue
         try:
-            extra_args = {"ACL": "public-read"}
+            extra_args = {}
             content_type, _ = mimetypes.guess_type(file_path.name)
             if content_type:
                 extra_args["ContentType"] = content_type
@@ -125,7 +125,7 @@ def upload_files(
 
 def write_url_manifest(directory: Path, urls: list[str]) -> None:
     manifest_path = directory / OUTPUT_FILENAME
-    manifest_path.write_text(", ".join(urls), encoding="utf-8")
+    manifest_path.write_text(" | ".join(urls), encoding="utf-8")
     print(f"{directory.name}: wrote {manifest_path.name}")
 
 
