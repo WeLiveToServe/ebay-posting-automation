@@ -8,3 +8,4 @@ soundfile
 keyboard
 pyperclip
 beautifulsoup4
+boto3
