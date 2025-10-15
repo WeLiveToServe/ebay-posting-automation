@@ -31,7 +31,7 @@ agent:
     - Edition - you must be specific as to exact edition, eg First Edition, Second Edition, 1925 reprint, illustrated, etc.
     - Year
     - Publisher - include city and country if available
-    - Blurb - write a short description of the book appropriate to selling the book on ebay
+    - Description - write a short description of the book appropriate to selling the book on ebay
     - Conditon - make brief notes on condition 50 words or less
     - Details: write a detailed list in bulleted format for a thorough list of information a book collector would appreciate, here
     are several examples of the detail listing I would like:
@@ -82,20 +82,46 @@ agent:
     Return only structured JSON matching the defined schema.
 
   user_prompt: >
-    Analyze the attached book images and produce bibliographic JSON adhering to the provided schema.
-  image_dir: images-bookfinder
+    Analyze the attached book images to create an ebay listing as below, taking into account your
+    system prompt-
+    -determine book title
+    -determine author
+    -determine as accurately as possible the specific edition as described in system prompt
+    -review the images provided and grade the condition of the book following system prompt
+
+    You will take all of the above and create a bibliographic description as outlined in system prompt.
+    The ordering of the description should be:
+    Author:
+    Title:
+    Publisher: Name and City, Country if known
+    Year:
+    Edition: (for example- First Edition, Second Edition, 1918 reprint, Illustrated Reprint, etc)
+    Errata: (for example, Illustrator: R. Noel Pocock (eight full-page illustrations; all present)
+    Format: eg Hardcover, Pictorial Cloth, Leather Bound, etc..
+    Conditions: (conservative, ABAA-style) 
+    Language: English
+    
+    Follow this by 1-2 paragraphs written to appeal to buyers, mainly book collectors and lovers of
+    English Literature. There can be points about the book, the author, how it fits into a collection,
+    makes the perfect gift, etc.
+    
+    
+
+  image_dir: batch-imnage-sets
   input_mode: images_only
   output_schema:
     type: object
     properties:
       title: {type: string}
       author: {type: string}
-      edition: {type: string}
-      year: {type: string}
       publisher: {type: string}
-      blurb: {type: string}
+      year: {type: string}
+      edition: {type: string}
+      specific edition errata: {type: string}
+      Format: {type: string}
       condition: {type: string}
-      details: {type: string}
+      
+      blurb: {type: string}
   csv_output:
     enabled: true
     include_header: true
@@ -125,14 +151,14 @@ agent:
       '*Action(SiteID=US|Country=US|Currency=USD|Version=1193|CC=UTF-8)': Add
       CustomLabel: ''
       '*Category': '29223'
-      '*ConditionID': '3000'
+      '*ConditionID': '5000-Good'
       '*Format': FixedPrice
       '*Duration': GTC
       '*StartPrice': ''
       BuyItNowPrice: ''
       '*Quantity': '1'
       '*Location': 'Los Angeles, CA'
-      ShippingType: Flat
+      ShippingType: ''
       'ShippingService-1:Option': USPSMedia
       'ShippingService-1:Cost': '0.00'
       '*DispatchTimeMax': '3'

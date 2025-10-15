@@ -6,7 +6,7 @@ Usage:
 
 This script renames files like <folder>/<img>.jpg -> <folder>/<folder>-01.jpg,
 uploads them to S3 under prefix/<folder>/<folder>-01.jpg (public-read), and writes
-uploaded_urls.txt with comma-separated URLs for easy pasting into eBay templates.
+uploaded_urls.txt with pipe | separated URLs for easy pasting into eBay templates.
 """
 
 from __future__ import annotations
