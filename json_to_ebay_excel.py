@@ -1,7 +1,7 @@
 """
 Create an eBay File Exchange workbook from the most recent agent JSON output.
 
-Runs with zero arguments by default. It looks in ./outputs-JSON for JSON files,
+Runs with zero arguments by default. It looks in ./batch-JSON-results for JSON files,
 grabs the newest one, and produces ebay-auto-listings.xlsx containing the header
 row plus a single listing row derived from the JSON.
 """
@@ -21,7 +21,7 @@ from openpyxl.workbook import Workbook
 
 warnings.filterwarnings("ignore", category=UserWarning, module="openpyxl")
 
-DEFAULT_JSON_DIR = Path("outputs-JSON")
+DEFAULT_JSON_DIR = Path("batch-JSON-results")
 DEFAULT_OUTPUT = Path("ebay-auto-listings.xlsx")
 HEADERS = [
     "*Action(SiteID=US|Country=US|Currency=USD|Version=1193)",
@@ -114,16 +114,8 @@ DEFAULT_VALUES = {
     "Category ID": "261186",
     "Category name": "/Books & Magazines/Books",
     "Quantity": 1,
-    "Start price": "5.00",
-    "Item photo URL": "https://keith-ebay-images.s3.us-east-2.amazonaws.com/IMG_4929.JPG",
-    "Condition ID": "5000-Good",
     "Format": "FixedPrice",
     "Duration": "GTC",
-    "Max dispatch time": "3",
-    "Returns accepted option": "ReturnsAccepted",
-    "Returns within option": "Days_30",
-    "Refund option": "MoneyBack",
-    "Return shipping cost paid by": "Buyer",
     "Location": "Newfields, NH",
     "Shipping profile name": "USPS Media Mail",
     "Return profile name": "Returns allowed within 30 days",
@@ -137,7 +129,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--json",
         type=Path,
-        help="Specific JSON file (defaults to newest in outputs-JSON).",
+        help="Specific JSON file (defaults to newest in batch-JSON-results).",
     )
     parser.add_argument(
         "--output",
@@ -200,19 +192,17 @@ def clean_text(value: Any) -> str:
     return result.strip()
 
 
-def build_description(payload: Mapping[str, Any]) -> str:
-    blurb = clean_text(payload.get("blurb"))
-    condition = clean_text(payload.get("condition"))
-    details = clean_text(payload.get("details"))
+def truncate_for_excel(value: Any, limit: int) -> str:
+    text = clean_text(value)
+    if len(text) <= limit:
+        return text
+    if limit <= 3:
+        return text[:limit]
+    return text[: limit - 3].rstrip() + "..."
 
-    parts: list[str] = []
-    if blurb:
-        parts.append(blurb)
-    if condition:
-        parts.append(f"Condition Notes:\n{condition}")
-    if details:
-        parts.append(f"Collector Details:\n{details}")
-    return "\n\n".join(parts)
+
+def extract_description(payload: Mapping[str, Any]) -> str:
+    return clean_text(payload.get("description"))
 
 
 def make_row(payload: Mapping[str, Any], args: argparse.Namespace) -> list[Any]:
@@ -220,20 +210,21 @@ def make_row(payload: Mapping[str, Any], args: argparse.Namespace) -> list[Any]:
     value_map = dict(DEFAULT_VALUES)
 
     json_lower = {str(k).lower(): v for k, v in payload.items()}
-    value_map["Title"] = args.title or clean_text(json_lower.get("title"))
-    value_map["C:Author"] = clean_text(json_lower.get("author"))
-    value_map["C:Edition"] = clean_text(json_lower.get("edition"))
-    value_map["C:Publication Year"] = clean_text(json_lower.get("year"))
-    value_map["C:Publisher"] = clean_text(json_lower.get("publisher"))
-    value_map["C:Book Title"] = value_map.get("Title", "")
-    value_map["Description"] = build_description(json_lower)
+
+    title_value = clean_text(args.title or json_lower.get("title"))
+    value_map["Title"] = title_value
+    value_map["C:Author"] = truncate_for_excel(json_lower.get("author"), 50)
+    value_map["C:Book Title"] = truncate_for_excel(title_value, 50)
 
     if args.start_price is not None:
-        value_map["Start price"] = args.start_price
+        try:
+            value_map["Start price"] = float(args.start_price)
+        except (TypeError, ValueError):
+            value_map["Start price"] = clean_text(args.start_price)
     if args.quantity is not None:
         value_map["Quantity"] = args.quantity
     if args.condition_id is not None:
-        value_map["Condition ID"] = args.condition_id
+        value_map["Condition ID"] = clean_text(args.condition_id)
     if args.category_id:
         value_map["Category ID"] = args.category_id
     if args.image_url is not None:
@@ -247,14 +238,29 @@ def make_row(payload: Mapping[str, Any], args: argparse.Namespace) -> list[Any]:
     if args.payment_profile is not None:
         value_map["Payment profile name"] = args.payment_profile
 
-    # Ensure columns AE (31) through AI (35) are blank.
-    blank_columns = {"Max dispatch time", "Returns accepted option", "Returns within option", "Refund option", "Return shipping cost paid by"}
+    auto_price = json_lower.get("price")
+    if args.start_price is None and auto_price is not None:
+        try:
+            value_map["Start price"] = float(auto_price)
+        except (TypeError, ValueError):
+            value_map["Start price"] = clean_text(auto_price)
+
+    if args.condition_id is None:
+        condition_id = json_lower.get("condition_id")
+        if condition_id is not None:
+            value_map["Condition ID"] = clean_text(condition_id)
+
+    if args.image_url is None:
+        image_urls = json_lower.get("image_urls")
+        if image_urls is not None:
+            value_map["Item photo URL"] = clean_text(image_urls)
+
+    description = extract_description(json_lower)
+    if description:
+        value_map["Description"] = description
 
     for idx, header in enumerate(HEADERS):
-        if header in blank_columns:
-            row[idx] = ""
-        else:
-            row[idx] = value_map.get(header, "")
+        row[idx] = value_map.get(header, None)
     return row
 
 

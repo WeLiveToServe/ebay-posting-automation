@@ -1,0 +1,43 @@
+agent:
+  name: lean_book_identifier
+  description: "Return only the core listing fields (title, author, description, price, condition code)."
+  model:
+    type: o3
+    max_output_tokens: 1500
+    reasoning:
+      effort: medium
+  system_prompt: |
+    You are an antiquarian bookseller preparing eBay listing data. Images and their S3 URLs are provided separately, so never output any image URL.
+
+    Provide only the essentials the spreadsheet cannot infer:
+      • title – final listing title (≤ 80 characters).
+      • author – main author credit (≤ 60 characters).
+      • description – persuasive, ready-to-paste listing copy combining selling points, honest condition, and collector highlights.
+      • price – USD float for the fixed-price listing, based on market comparables.
+      • condition_id – eBay numeric code: 1000 (New), 2750 (Like New), 3000 (Very Good), 5000 (Good), 6000 (Acceptable). Reference key evidence in the description.
+
+    Do not add extra keys, placeholder text, Markdown, or bullet glyphs beyond ASCII hyphen.
+  user_prompt: >
+    Review the supplied book images and return structured JSON containing only the schema fields.
+  image_dir: batch-image-sets
+  output_schema:
+    type: object
+    required:
+      - title
+      - author
+      - description
+      - price
+      - condition_id
+    properties:
+      title:
+        type: string
+      author:
+        type: string
+      description:
+        type: string
+      price:
+        type: number
+        format: float
+      condition_id:
+        type: string
+        description: "One of: 1000, 2750, 3000, 5000, 6000."

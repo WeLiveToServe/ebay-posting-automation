@@ -1,0 +1,16 @@
+Recommended manual flow until automation lands:
+a. Run rename_and_upload_images.py from the project root (inputs: batch-image-sets, outputs: 
+uploads + uploaded_urls.txt in each set). No file moves needed afterward.
+
+b. Run batch_book_agent_runner.py (or update it to load keith-book-id-agent.yaml first). 
+This reads folders in batch-image-sets and writes JSON files into batch-JSON-results.
+
+c. For a single listing workbook, 
+run json_to_ebay_excel.py --json batch-JSON-results\<book-folder>.json (no file move required).
+
+d. If you want to append multiple listings in one go, move each finished JSON from 
+batch-JSON-results to queue-JSONs-to-excel 
+(e.g., Move-Item batch-JSON-results\pearl-gawain-green-knight.json queue-JSONs-to-excel\). 
+After the move, run append_json_queue_to_excel.py, which appends rows and then shuffles 
+processed files into queue-JSONs-to-excel\processed.
+

@@ -23,6 +23,7 @@ warnings.filterwarnings("ignore", category=UserWarning, module="openpyxl")
 QUEUE_DIR = Path("queue-JSONs-to-excel")
 PROCESSED_DIR = QUEUE_DIR / "processed"
 WORKBOOK_PATH = Path("ebay-auto-listings.xlsx")
+IMAGE_ROOT = Path("batch-image-sets")
 
 REQUIRED_HEADERS = [
     "*Action(SiteID=US|Country=US|Currency=USD|Version=1193)",
@@ -114,10 +115,7 @@ DEFAULT_VALUES = {
     "*Action(SiteID=US|Country=US|Currency=USD|Version=1193)": "Add",
     "Category ID": "261186",
     "Category name": "/Books & Magazines/Books",
-    "Start price": "5.00",
     "Quantity": 1,
-    "Item photo URL": "https://keith-ebay-images.s3.us-east-2.amazonaws.com/IMG_4929.JPG",
-    "Condition ID": "5000-Good",
     "Format": "FixedPrice",
     "Duration": "GTC",
     "Location": "Newfields, NH",
@@ -127,21 +125,7 @@ DEFAULT_VALUES = {
     "C:Language": "English",
 }
 
-FORCED_BLANK_HEADERS = {
-    "Max dispatch time",
-    "Returns accepted option",
-    "Returns within option",
-    "Refund option",
-    "Return shipping cost paid by",
-}
-
-JSON_FIELD_MAP = {
-    "title": "Title",
-    "author": "C:Author",
-    "edition": "C:Edition",
-    "year": "C:Publication Year",
-    "publisher": "C:Publisher",
-}
+JSON_REQUIRED_FIELDS = {"title", "author", "description", "price", "condition_id"}
 
 
 def collect_queue() -> list[Path]:
@@ -180,17 +164,21 @@ def normalise_text(value: Any) -> str:
 
 
 def build_description(payload: Mapping[str, Any]) -> str:
-    blurb = normalise_text(payload.get("blurb"))
-    condition = normalise_text(payload.get("condition"))
-    details = normalise_text(payload.get("details"))
-    sections: list[str] = []
-    if blurb:
-        sections.append(blurb)
-    if condition:
-        sections.append(f"Condition Notes:\n{condition}")
-    if details:
-        sections.append(f"Collector Details:\n{details}")
-    return "\n\n".join(sections)
+    return normalise_text(payload.get("description"))
+
+
+def load_uploaded_urls(json_path: Path) -> str:
+    listing_stem = json_path.stem
+    manifest_path = IMAGE_ROOT / listing_stem / "uploaded_urls.txt"
+    if not manifest_path.exists():
+        raise FileNotFoundError(f"Missing uploaded_urls.txt for '{listing_stem}'")
+    content = manifest_path.read_text(encoding="utf-8").strip()
+    if not content:
+        raise ValueError(f"uploaded_urls.txt for '{listing_stem}' is empty.")
+    parts = [part.strip() for part in content.split("|") if part.strip()]
+    if not parts:
+        raise ValueError(f"uploaded_urls.txt for '{listing_stem}' does not contain valid URLs.")
+    return " | ".join(parts)
 
 
 def read_headers(sheet: Worksheet) -> list[str]:
@@ -214,28 +202,41 @@ def truncate_for_excel(value: Any, limit: int) -> str:
     return text[: limit - 3].rstrip() + "..."
 
 
-def build_row(header_order: list[str], payload: Mapping[str, Any]) -> dict[str, Any]:
+def build_row(header_order: list[str], payload: Mapping[str, Any], image_urls: str) -> dict[str, Any]:
     row = {header: "" for header in header_order}
     row.update({key: value for key, value in DEFAULT_VALUES.items() if key in row})
 
     payload_lower = {str(key).lower(): value for key, value in payload.items()}
-    for json_field, header in JSON_FIELD_MAP.items():
-        if header in row:
-            row[header] = normalise_text(payload_lower.get(json_field))
+    missing = [
+        field
+        for field in JSON_REQUIRED_FIELDS
+        if payload_lower.get(field) in (None, "")
+    ]
+    if missing:
+        raise ValueError(f"JSON payload missing required field(s): {', '.join(sorted(missing))}")
+    title = normalise_text(payload_lower.get("title"))
+    author = normalise_text(payload_lower.get("author"))
+    description = build_description(payload_lower)
+    condition_id = normalise_text(payload_lower.get("condition_id"))
+    price_value = payload_lower.get("price")
 
     if "Title" in row:
-        row["Title"] = row.get("Title", "")
+        row["Title"] = title
     if "C:Book Title" in row:
-        row["C:Book Title"] = truncate_for_excel(row.get("Title", ""), 50)
+        row["C:Book Title"] = truncate_for_excel(title, 50)
     if "C:Author" in row:
-        source_author = row.get("C:Author") or payload_lower.get("author")
-        row["C:Author"] = truncate_for_excel(source_author, 50)
+        row["C:Author"] = truncate_for_excel(author, 50)
     if "Description" in row:
-        row["Description"] = build_description(payload_lower)
-
-    for blank_header in FORCED_BLANK_HEADERS:
-        if blank_header in row:
-            row[blank_header] = ""
+        row["Description"] = description
+    if "Item photo URL" in row:
+        row["Item photo URL"] = normalise_text(image_urls)
+    if "Condition ID" in row:
+        row["Condition ID"] = condition_id
+    if "Start price" in row and price_value is not None:
+        try:
+            row["Start price"] = float(price_value)
+        except (TypeError, ValueError):
+            row["Start price"] = normalise_text(price_value)
 
     return row
 
@@ -292,11 +293,12 @@ def process_queue() -> None:
     for json_path in json_files:
         try:
             payload = load_json(json_path)
+            image_urls = load_uploaded_urls(json_path)
         except Exception as exc:
             print(f"Skipping {json_path.name}: {exc}")
             continue
 
-        row_data = build_row(headers, payload)
+        row_data = build_row(headers, payload, image_urls)
         append_row(sheet, headers, row_data)
         processed.append(json_path)
         print(f"Appended {json_path.name}")

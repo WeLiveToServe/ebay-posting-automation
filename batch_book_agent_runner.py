@@ -15,7 +15,7 @@ from typing import Any
 
 from openai import OpenAI
 
-CONFIG_PATH = Path("book-id-agent.yaml")
+CONFIG_PATH = Path("lean-book-agent.yaml")
 IMAGE_ROOT = Path("batch-image-sets")
 OUTPUT_ROOT = Path("batch-JSON-results")
 
