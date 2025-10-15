@@ -15,11 +15,13 @@ from typing import Any
 
 from openai import OpenAI
 
+# Hardcoded paths for configuration, images, and output
 CONFIG_PATH = Path("book-id-agent.yaml")
 IMAGE_ROOT = Path("batch-image-sets")
 OUTPUT_ROOT = Path("batch-JSON-results")
 
 
+# Load and parse the agent configuration from the hardcoded YAML file
 def load_agent_config() -> dict[str, Any]:
     import yaml
 
@@ -33,10 +35,12 @@ def load_agent_config() -> dict[str, Any]:
     return agent_data
 
 
+# Collect all JPG/JPEG image files from a directory
 def collect_images(directory: Path) -> list[Path]:
     return sorted(path for path in directory.iterdir() if path.suffix.lower() in {".jpg", ".jpeg"})
 
 
+# Encode a single image file as a base64 data URL
 def encode_image(path: Path) -> dict[str, Any]:
     with path.open("rb") as handle:
         data = handle.read()
@@ -48,6 +52,7 @@ def encode_image(path: Path) -> dict[str, Any]:
     }
 
 
+# Build the input messages for the OpenAI API call
 def build_input(agent_config: dict[str, Any], image_paths: list[Path]) -> list[dict[str, Any]]:
     system_prompt = agent_config.get("system_prompt", "")
     user_prompt = agent_config.get(
@@ -65,6 +70,7 @@ def build_input(agent_config: dict[str, Any], image_paths: list[Path]) -> list[d
     return inputs
 
 
+# Execute the agent by calling the OpenAI API with the configured model
 def run_agent(agent_config: dict[str, Any], image_paths: list[Path]) -> str:
     model_config = agent_config.get("model", {})
     if not isinstance(model_config, dict):
@@ -84,6 +90,7 @@ def run_agent(agent_config: dict[str, Any], image_paths: list[Path]) -> str:
     return output_text if output_text else json.dumps(response.model_dump(), indent=2)
 
 
+# Process a single directory: collect images, run agent, write JSON output
 def process_directory(agent_config: dict[str, Any], directory: Path) -> None:
     image_paths = collect_images(directory)
     if not image_paths:
@@ -103,6 +110,7 @@ def process_directory(agent_config: dict[str, Any], directory: Path) -> None:
     print(f"{output_path.name} complete")
 
 
+# Main entry point: load config and process all image directories
 def main() -> None:
     agent_config = load_agent_config()
     if not IMAGE_ROOT.exists():
