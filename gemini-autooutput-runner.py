@@ -1,9 +1,15 @@
+#still outputting json not text, codex adjusted process_directory module and removed "try" 
+#nope, this was bass ackwards, gpt-4o needs responses, not chat completion
+#last iteration called wrong endpoint, gpt-4o needs chat.completion api NOT responses API
+#orig pasted partial code, this is all of it
+#initial gemini update to get better html return format
 """
 Batch runner for the bibliographic identification agent.
 
 For each subdirectory under a specified image directory, collect its JPG files,
 invoke the agent defined in a YAML configuration file (specified via --config),
 and write the resulting JSON to a specified output directory (specified via --output).
+Includes an optional --review flag to open the generated HTML description for quick inspection.
 """
 
 from __future__ import annotations
@@ -11,21 +17,20 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import webbrowser      # ADDED: for opening HTML file
-import base64          # ADDED: for image encoding
+import webbrowser
 from pathlib import Path
 from typing import Any
-from urllib.request import pathname2url # ADDED: for cross-platform file URI
+from urllib.request import pathname2url
 
 from openai import OpenAI
-import yaml # ADDED: import yaml for clarity
 
 # Root directory for images (subdirectories here will be processed)
 IMAGE_ROOT = Path("batch-image-sets")
+URL_MANIFEST_NAME = "uploaded_urls.txt"
 
 
-# Load and parse the agent configuration from the specified YAML file
 def load_agent_config(config_path: Path) -> dict[str, Any]:
+    """Load and parse the agent configuration from the specified YAML file."""
     import yaml
 
     with config_path.open("r", encoding="utf-8") as handle:
@@ -38,25 +43,20 @@ def load_agent_config(config_path: Path) -> dict[str, Any]:
     return agent_data
 
 
-# Collect all JPG/JPEG image files from a directory
-def collect_images(directory: Path) -> list[Path]:
-    return sorted(path for path in directory.iterdir() if path.suffix.lower() in {".jpg", ".jpeg"})
+def load_image_urls(directory: Path) -> list[str]:
+    """Load pipe-delimited image URLs from the manifest written by the upload script."""
+    manifest_path = directory / URL_MANIFEST_NAME
+    if not manifest_path.exists():
+        raise FileNotFoundError("no url text file found")
+    raw = manifest_path.read_text(encoding="utf-8")
+    urls = [part.strip() for part in raw.split("|") if part.strip()]
+    if not urls:
+        raise ValueError("no url text file found")
+    return urls
 
 
-# Encode a single image file as a base64 data URL
-def encode_image(path: Path) -> dict[str, Any]:
-    with path.open("rb") as handle:
-        data = handle.read()
-    import base64
-    encoded = base64.b64encode(data).decode("ascii")
-    return {
-        "type": "input_image",
-        "image_url": f"data:image/jpeg;base64,{encoded}",
-    }
-
-
-# Build the input messages for the OpenAI API call
-def build_input(agent_config: dict[str, Any], image_paths: list[Path]) -> list[dict[str, Any]]:
+def build_input(agent_config: dict[str, Any], image_urls: list[str]) -> list[dict[str, Any]]:
+    """Build the input messages for the OpenAI API call."""
     system_prompt = agent_config.get("system_prompt", "")
     user_prompt = agent_config.get(
         "user_prompt",
@@ -67,14 +67,14 @@ def build_input(agent_config: dict[str, Any], image_paths: list[Path]) -> list[d
         inputs.append({"role": "system", "content": [{"type": "input_text", "text": system_prompt}]})
 
     content = [{"type": "input_text", "text": user_prompt}]
-    for image_path in image_paths:
-        content.append(encode_image(image_path))
+    for image_url in image_urls:
+        content.append({"type": "input_image", "image_url": image_url})
     inputs.append({"role": "user", "content": content})
     return inputs
 
 
 # Execute the agent by calling the OpenAI API with the configured model
-def run_agent(agent_config: dict[str, Any], image_paths: list[Path]) -> str:
+def run_agent(agent_config: dict[str, Any], image_urls: list[str]) -> str:
     """Execute the agent by calling the OpenAI API with the configured model (maintaining original working call)."""
     model_config = agent_config.get("model", {})
     if not isinstance(model_config, dict):
@@ -84,7 +84,7 @@ def run_agent(agent_config: dict[str, Any], image_paths: list[Path]) -> str:
         raise ValueError("Model type is not specified in the YAML.")
 
     client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-    inputs = build_input(agent_config, image_paths)
+    inputs = build_input(agent_config, image_urls)
     
     # CRITICAL: Using the non-standard but working API call signature
     response = client.responses.create(
@@ -92,10 +92,37 @@ def run_agent(agent_config: dict[str, Any], image_paths: list[Path]) -> str:
         input=inputs,
         max_output_tokens=model_config.get("max_output_tokens"),
     )
-    
-    # Extracting the output text using the property that worked for your environment
+
+    # The Responses API does not expose ChatCompletion-style choices.
     output_text = getattr(response, "output_text", None)
-    return output_text if output_text else json.dumps(response.model_dump(), indent=2)
+    if output_text:
+        return output_text
+
+    chunks: list[str] = []
+    output_messages = getattr(response, "output", []) or []
+    for message in output_messages:
+        content = getattr(message, "content", None)
+        if content is None and isinstance(message, dict):
+            content = message.get("content")
+        if not content:
+            continue
+        for item in content:
+            item_type = getattr(item, "type", None)
+            if item_type is None and isinstance(item, dict):
+                item_type = item.get("type")
+            if item_type != "output_text":
+                continue
+            text_part = getattr(item, "text", None)
+            if text_part is None and isinstance(item, dict):
+                text_part = item.get("text")
+            if text_part:
+                chunks.append(text_part)
+
+    if chunks:
+        return "".join(chunks)
+
+    return json.dumps(response.model_dump(), indent=2)
+
 
 def open_html_for_review(json_path: Path):
     """
@@ -108,10 +135,11 @@ def open_html_for_review(json_path: Path):
             raw_data = json.load(f)
 
         # 2. Parse the output: Handle potential 'raw_text' wrapper 
+        # (where the final JSON is a string inside raw_text)
         data = {}
         if 'raw_text' in raw_data:
             json_string = raw_data['raw_text'].strip()
-            # Clean up potential markdown code block markers
+            # Clean up potential markdown code block markers (```json\n...\n```)
             if json_string.startswith("```json"):
                 json_string = json_string[7:].strip()
             if json_string.endswith("```"):
@@ -155,64 +183,37 @@ def open_html_for_review(json_path: Path):
 
         # 5. Open the file in the default web browser
         print(f"Opening HTML file for review: {html_file_path.name}")
+        # Use file:// URI for cross-platform compatibility
         webbrowser.open(f"file://{pathname2url(str(html_file_path.resolve()))}")
 
     except Exception as e:
         print(f"Error during HTML review process for {json_path.name}: {e}")
 
-# Process a single directory: collect images, run agent, write JSON output to specified location
+
 def process_directory(agent_config: dict[str, Any], directory: Path, output_root: Path, review_mode: bool) -> None:
     """
     Process a single directory: collect images, run agent, write JSON output, 
     and optionally open the HTML description for review.
     """
-    image_paths = collect_images(directory)
-    if not image_paths:
-        print(f"Skipping {directory.name}: no JPG images found.")
-        return
-        
-    output_text = run_agent(agent_config, image_paths)
+    image_urls = load_image_urls(directory)
+    output_text = run_agent(agent_config, image_urls)
 
     # Create the output directory if it doesn't exist
     output_root.mkdir(parents=True, exist_ok=True)
     
     # Build the output file path using the directory name
-    output_path = output_root / f"{directory.name}.json"
-    
+    output_path = output_root / f"{directory.name}.txt"
+
     with output_path.open("w", encoding="utf-8") as handle:
-        try:
-            # Try to parse the output text directly as JSON
-            parsed = json.loads(output_text)
-            json.dump(parsed, handle, ensure_ascii=False, indent=2)
-            json_file_path = output_path # Use this path for review
-        except json.JSONDecodeError:
-            # If parsing fails, wrap the raw text in a JSON object for inspection
-            json_content = json.dumps({"raw_text": output_text}, ensure_ascii=False, indent=2)
-            handle.write(json_content)
-            json_file_path = output_path # Use this path for review
-            
+        handle.write(output_text)
+
     print(f"{output_path.name} complete")
 
-    # ADDED: Call the new review function if the flag was set
+    # Call the new review function if the flag was set
     if review_mode:
-        open_html_for_review(json_file_path)
-    # Create the output directory if it doesn't exist
-    output_root.mkdir(parents=True, exist_ok=True)
-    
-    # Build the output file path using the directory name
-    output_path = output_root / f"{directory.name}.json"
-    
-    with output_path.open("w", encoding="utf-8") as handle:
-        try:
-            parsed = json.loads(output_text)
-        except json.JSONDecodeError:
-            handle.write(json.dumps({"raw_text": output_text}, ensure_ascii=False, indent=2))
-        else:
-            json.dump(parsed, handle, ensure_ascii=False, indent=2)
-    print(f"{output_path.name} complete")
+        open_html_for_review(output_path)
 
 
-# Main entry point: parse command-line arguments and process all image directories
 def main() -> None:
     """Main entry point: parse command-line arguments and process all image directories."""
     parser = argparse.ArgumentParser(
@@ -236,11 +237,36 @@ def main() -> None:
     )
     args = parser.parse_args()
     
-    # ... (rest of the argument validation and directory loop)
+    config_path = Path(args.config)
+    if not config_path.exists() or not config_path.is_file():
+        print(f"Error: Config file not found: {config_path}")
+        return
+    
+    output_root = Path(args.output)
+    
+    try:
+        agent_config = load_agent_config(config_path)
+    except Exception as e:
+        print(f"Error loading agent configuration: {e}")
+        return
+    
+    if not IMAGE_ROOT.exists():
+        print(f"Image root '{IMAGE_ROOT}' does not exist.")
+        return
+
+    directories = sorted(path for path in IMAGE_ROOT.iterdir() if path.is_dir())
+    if not directories:
+        print(f"No subdirectories found under '{IMAGE_ROOT}'.")
+        return
 
     # Process each directory, passing the new review_mode flag
     for directory in directories:
-        process_directory(agent_config, directory, output_root, args.review)
+        try:
+            process_directory(agent_config, directory, output_root, args.review)
+        except (FileNotFoundError, ValueError):
+            print("no url text file found")
+            return
+
 
 if __name__ == "__main__":
     main()
