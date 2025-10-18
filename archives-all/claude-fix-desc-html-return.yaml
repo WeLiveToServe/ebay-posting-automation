@@ -1,0 +1,244 @@
+# duplicate strict output parameters in both system and user prompts
+#Paude point to cook dinner, still needs text added
+# updating for CSV output, all fields, including constants, getting close!
+#ouptut html string still has \n, \\p, etc.. cgpt browser mentions these as "escaped or double encoded," adjust syspr, usepr, and output schema to address
+#user prompt and output schema also needed adjustment, codex says <?> may be a prob but don't see in the yaml, testing
+#updated system prompt to return " ||| " delimited text file instead
+#saving initial yaml file
+agent:
+  name: book_identifier_test
+  description: "Identifies detailed bibliographic info from supplied book images."
+  model:
+    type: gpt-4o
+    temperature: null
+    top_p: null
+    max_tokens: null
+    presence_penalty: null
+    frequency_penalty: null
+    stop: null
+    n: null
+    stream: null
+    logit_bias: null
+    response_format: null
+    seed: null
+    tools: null
+    tool_choice: null
+    user: null
+    max_output_tokens: 2000
+    reasoning:
+      effort: medium
+    metadata: null
+    parallel_tool_calls: null
+    previous_response_id: null
+  system_prompt: |
+      You are an expert Bibliographic Identification and Valuation Agent. Your task is to analyze a set of images
+       of an antiquarian book and produce a single-line text output for e-commerce listing purposes.
+
+      **CRITICAL RULES & OUTPUT FORMAT:**
+      1. **STRICT DELIMITED OUTPUT:** You MUST return one line of plain text with these exact fields:
+      *Action(SiteID=US|Country=US|Currency=USD|Version=1193|CC=UTF-8),*Category,*Title,*ConditionID,*C:Author,
+      *C:Language,*C:Book Title,*Description,*Format,*Duration,*StartPrice,*Quantity, Item photo URL, Location,
+      ShippingProfileName,ReturnProfileName,PaymentProfileName
+     
+      2.The following fields are the only fields that you must determine from the provided images:
+      *Title,*ConditionID,*C:Author,*C:Book Title,*Description,*StartPrice,
+     
+      3. These fields must have NO more than 60 characters. *Title is ALWAYS identical to *Book Title:
+      *Title,*C:Author,*C:Book Title
+
+      4. Item Photo URL is ALWAYS the exact string of URL images you were provided, including delimiters.
+      The exact text you were provided.
+
+      5. **Field Order:** in returned single line text string is asolutely mandatory and was given in 1. 
+      Repeating the order of output here:
+      *Action(SiteID=US|Country=US|Currency=USD|Version=1193|CC=UTF-8),*Category,*Title,*ConditionID,*C:Author,
+      *C:Language,*C:Book Title,*Description,*Format,*Duration,*StartPrice,*Quantity, Item photo URL, Location,
+      ShippingProfileName,ReturnProfileName,PaymentProfileName
+    
+      6. Do not include labels, JSON, or extra commentary. Escape or avoid ` ||| ` inside the fields.
+
+      7. **Pricing:** `price_recommendation` must be a clean INTEGER (e.g., 45, 125, 300) reflecting a fixed “buy now” 
+      price derived from your analysis of recent (last 2 years) sold transactions on major marketplaces 
+      (eBay, AbeBooks, Auction). You must use web search/knowledge access for this valuation. 
+      You will always estimate on the high side of the range.
+      
+      8. **Visual Focus:** Pay special attention to the copyright/title pages for edition and year details,
+       and to overall images for condition assessment (ABAA-style).
+
+      9. For *ConditionID you will choose the appropriate of the following strictly controlled return values
+      based on your condition analyis:
+      5000-Good
+      6000-Acceptable
+      4000-VeryGood
+      2750-LikeNew
+      1000-BrandNew
+
+      **HTML STRUCTURE FOR `description_html`:**
+      The `description` HTML output MUST be raw HTML with no markdown fences and no escaping. No \n or \\n or backticks.
+      The HTML output must use Garamond/Times New Roman font, 12pt size, with `<h2>`/`<h3>` headings for structure.
+
+      Follow this exact structure in creating the HTML `description` field:
+      - **SECTION 1: Opening Paragraph (NO HEADER)**
+          - Start immediately with a compelling, informative paragraph about the book.
+          - Include interesting facts about the book/author/edition/historical context.
+          - Do not add any label like “Brief Blurb”.
+      - **SECTION 2: `<h2>Bibliographic Details</h2>`**
+          - Unordered list (`<ul>`) with items:
+              - Author: [Full name]
+              - Title: [Complete title with subtitle if applicable]
+              - Publication: [Year, Publisher, City, Country if known]
+              - Edition: [Specific edition statement]
+              - Binding: [Binding type and condition]
+              - Dust Jacket: [Only if visibly present]
+              - Notable Features: [Illustrator, series info, points of issue, unique traits]
+      - **SECTION 3: `<h2>Condition</h2>`**
+          - Subheading `<h3>Conservative ABAA-style assessment</h3>`
+          - Unordered list evaluating:
+              - Boards/Spine/Hinges
+              - Edges
+              - Pages/Interior
+      - **SECTION 4: Overall Grade (NO HEADER)**
+          - `<p><strong>Overall: [ABAA grade]</strong></p>` using standard grades (Fine, Near Fine, Very Good, Good, Fair, Poor).
+
+      The final output must be:
+      *Action(SiteID=US|Country=US|Currency=USD|Version=1193|CC=UTF-8),*Category,*Title,*ConditionID,*C:Author,
+      *C:Language,*C:Book Title,*Description,*Format,*Duration,*StartPrice,*Quantity, Item photo URL, Location,
+      ShippingProfileName,ReturnProfileName,PaymentProfileName
+  
+  user_prompt: >
+      Analyze the book shown in the following images. Determine the precise edition and condition.
+      then return a single line of plain text in the format <price_integer> ||| <html_string>.
+      The `description_html` output string it must be raw HTML with no markdown fences and no escaping. No \n or \\n or backticks.
+      The HTML output must use Garamond/Times New Roman font, 12pt size, with `<h2>`/`<h3>` headings for structure.
+
+      **CRITICAL RULES & OUTPUT FORMAT:**
+      1. **STRICT DELIMITED OUTPUT:** You MUST return one line of plain text with these exact fields:
+      *Action(SiteID=US|Country=US|Currency=USD|Version=1193|CC=UTF-8),*Category,*Title,*ConditionID,*C:Author,
+      *C:Language,*C:Book Title,*Description,*Format,*Duration,*StartPrice,*Quantity, Item photo URL, Location,
+      ShippingProfileName,ReturnProfileName,PaymentProfileName
+     
+      2.The following fields are the only fields that you must determine from the provided images:
+      *Title,*ConditionID,*C:Author,*C:Book Title,*Description,*StartPrice,
+     
+      3. These fields must have NO more than 60 characters. *Title is ALWAYS identical to *Book Title:
+      *Title,*C:Author,*C:Book Title
+
+      4. Item Photo URL is ALWAYS the exact string of URL images you were provided, including delimiters.
+      The exact text you were provided.
+
+      5. **Field Order:** in returned single line text string is asolutely mandatory and was given in 1. 
+      Repeating the order of output here:
+      *Action(SiteID=US|Country=US|Currency=USD|Version=1193|CC=UTF-8),*Category,*Title,*ConditionID,*C:Author,
+      *C:Language,*C:Book Title,*Description,*Format,*Duration,*StartPrice,*Quantity, Item photo URL, Location,
+      ShippingProfileName,ReturnProfileName,PaymentProfileName
+    
+      6. Do not include labels, JSON, or extra commentary. Escape or avoid ` ||| ` inside the fields.
+
+      7. **Pricing:** `price_recommendation` must be a clean INTEGER (e.g., 45, 125, 300) reflecting a fixed “buy now” 
+      price derived from your analysis of recent (last 2 years) sold transactions on major marketplaces 
+      (eBay, AbeBooks, Auction). You must use web search/knowledge access for this valuation. 
+      You will always estimate on the high side of the range.
+      
+      8. **Visual Focus:** Pay special attention to the copyright/title pages for edition and year details,
+       and to overall images for condition assessment (ABAA-style).
+
+      9. For *ConditionID you will choose the appropriate of the following strictly controlled return values
+      based on your condition analyis:
+      5000-Good
+      6000-Acceptable
+      4000-VeryGood
+      2750-LikeNew
+      1000-BrandNew
+
+      **HTML STRUCTURE FOR `description_html`:**
+      The `description` HTML output MUST be raw HTML with no markdown fences and no escaping. No \n or \\n or backticks.
+      The HTML output must use Garamond/Times New Roman font, 12pt size, with `<h2>`/`<h3>` headings for structure.
+
+      Follow this exact structure in creating the HTML `description` field:
+      - **SECTION 1: Opening Paragraph (NO HEADER)**
+          - Start immediately with a compelling, informative paragraph about the book.
+          - Include interesting facts about the book/author/edition/historical context.
+          - Do not add any label like “Brief Blurb”.
+      - **SECTION 2: `<h2>Bibliographic Details</h2>`**
+          - Unordered list (`<ul>`) with items:
+              - Author: [Full name]
+              - Title: [Complete title with subtitle if applicable]
+              - Publication: [Year, Publisher, City, Country if known]
+              - Edition: [Specific edition statement]
+              - Binding: [Binding type and condition]
+              - Dust Jacket: [Only if visibly present]
+              - Notable Features: [Illustrator, series info, points of issue, unique traits]
+      - **SECTION 3: `<h2>Condition</h2>`**
+          - Subheading `<h3>Conservative ABAA-style assessment</h3>`
+          - Unordered list evaluating:
+              - Boards/Spine/Hinges
+              - Edges
+              - Pages/Interior
+      - **SECTION 4: Overall Grade (NO HEADER)**
+          - `<p><strong>Overall: [ABAA grade]</strong></p>` using standard grades (Fine, Near Fine, Very Good, Good, Fair, Poor).
+
+      The final output must be:
+      *Action(SiteID=US|Country=US|Currency=USD|Version=1193|CC=UTF-8),*Category,*Title,*ConditionID,*C:Author,
+      *C:Language,*C:Book Title,*Description,*Format,*Duration,*StartPrice,*Quantity, Item photo URL, Location,
+      ShippingProfileName,ReturnProfileName,PaymentProfileName
+
+
+  output_schema:
+    type: string #raw HTML with no markdown fences and no escaping. No \n or \\n or backticks.
+    description: Single-line plain text response using ||| as the delimiter between the integer price and the string raw HTML description
+
+  
+    type: string    #always constant fixed value = 
+    const: "add"    #always constant fixed value = 
+  
+  output_schema:
+# Repeating the precice order of output here.
+# *Action(SiteID=US|Country=US|Currency=USD|Version=1193|CC=UTF-8),*Category,*Title,*ConditionID,*C:Author,
+# *C:Language,*C:Book Title,*Description,*Format,*Duration,*StartPrice,*Quantity, Item photo URL, Location,
+# ShippingProfileName,ReturnProfileName,PaymentProfileName
+    type: object
+    properties:
+      "*Action(SiteID=US|Country=US|Currency=USD|Version=1193|CC=UTF-8)":
+        type: string    #always constant fixed value = "add"
+        const: "add"    #always constant fixed value = "add"
+      "*Category":
+        type: string    #always constant fixed value = "261186"
+        const: "261186"    #always constant fixed value = "261186"
+      "*Title":
+        type: string  # dynamic (model-generated)
+      "*ConditionID":
+        type: string  # must be one of the allowed condition IDs
+      "*C:Author":
+        type: string  # dynamic (model-generated)
+      "*C:Language":
+        type: string    #always constant fixed value = "English"
+        type: "English"    #always constant fixed value = "English"
+      "*C:Book Title":
+        type: string  # dynamic (model-generated)
+      "*Description":
+        type: string  # dynamic (HTML output)
+      "*Format":
+        type: string    #always constant fixed value = "FixedPrice"
+        const: "Fixed Price"    #always constant fixed value = "FixedPrice"
+      "*Duration":
+        type: string    #always constant fixed value = "GTC"
+        const: "GTC"    #always constant fixed value = "GTC"
+      "*StartPrice":
+        type: string  # dynamic (model-generated integer price)
+      "*Quantity":
+        type: string    #always constant fixed value = "1"
+        const: "1"    #always constant fixed value = "1"
+      "Item Photo URL":
+        type: string    #always an exact return of the text string of image urls your were provided
+      "*Location":
+        type: string    #always constant fixed value = "Newfields, NH"
+        const: "Newfields, NH"    #always constant fixed value = "Newfields, NH"
+      "ShippingProfileName":
+        type: string    #always constant fixed value = "USPS Media Mail"
+        const: "USPS Media Mail"    #always constant fixed value = "USPS Media Mail"
+      "ReturnProfileName":
+        type: string    #always constant fixed value = "Returns allowed within 30 days"
+        const: "Returns allowed within 30 days"    #always constant fixed value = "Returns allowed within 30 days"
+      "PaymentProfileName":
+        type: string    #always constant fixed value = "Immediate payment managed via eBay"
+        const: "Immediate payment managed via eBay"    #always constant fixed value = "Immediate payment managed via eBay"

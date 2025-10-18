@@ -1,124 +1,103 @@
 # eBay Posting Automation
 
-## Overview
-This repository automates the creation and posting of eBay listings using OpenAI’s multimodal models.  
-Images of used books are analyzed to extract metadata (title, author, edition, publisher, year, condition, etc.), which is then structured into eBay-ready listing JSON.  
-
-The system produces:
-- Structured description fields  
-- Dynamic pricing and condition metadata  
-- Automatic post formatting for “Buy It Now” or “Auction” modes  
-
-The project is modular and built around **agent YAML definitions** and **tool scripts** for extensibility.
+Automated pipeline for turning antiquarian book photos into eBay-ready listings. The system renames and uploads images, runs an OpenAI agent to produce price/HTML/condition data, and builds minimal Excel upload sheets that can be dropped directly into eBay’s file exchange.
 
 ---
 
-## Integration with `llm_agent_utilities`
+## Workflow Overview
 
-### Purpose
-`llm_agent_utilities` contains the common logic for creating, running, and managing LLM agents.  
-Rather than duplicating agent orchestration code, this repo **imports those utilities directly**.  
-This ensures:
-- All agents (across multiple projects) use the same initialization and execution logic.  
-- No manual version control across repos.  
-- Immediate access to updates and shared improvements.  
+1. **Rename & upload photos**  
+   ```
+   python rename_and_upload_images.py --bucket <bucket> --prefix <prefix> [--root <path>] [--dry-run]
+   ```  
+   - Reads `batch-image-sets/<folder>/`  
+   - Renames images to `<folder>-NN.jpg`, uploads to S3, writes `uploaded_urls.txt`
 
-### Structure
+2. **Generate agent outputs**  
+   ```
+   python gemini-autooutput-runner.py --config gem-yaml-reboot.yaml --output batch-JSON-results [--review]
+   ```  
+   - Uses the YAML config to call GPT-4o  
+   - Writes `<folder>.txt` to `batch-JSON-results/` in the format `price ||| html ||| condition`  
+   - Optional `--review` opens the HTML description locally
 
-Local structure:
-```
-C:\Users\Keith\dev\projects\
-├── ebay-posting-automation\
-│   ├── main.py
-│   ├── book-identifier-agent.py
-│   ├── agent-yamls\
-│   │   └── book_identifier.yaml
-│   ├── tools\
-│   │   └── image_processing.py
-│   └── llm_agent_utilities\  ← imported here (shared repo)
-└── LLM-agent-utilities\
-```
+3. **Produce Excel uploads**
+   - Single listing (spot check):  
+     ```
+     python generate_ebay_upload_excel.py --folder <folder> [--output <dir>]
+     ```  
+   - Multi-listing / append:  
+     ```
+     python batch_generate_ebay_workbook.py [--folders <f1> <f2> ...] [--output <dir>] [--append]
+     ```  
+     Builds `ebay-upl-MM-DD-HH-MM.xlsx` with required columns and constants, optionally appending to the latest workbook.
 
-> The `llm_agent_utilities` directory may either exist as a submodule inside the eBay repo or as a sibling repo referenced via `sys.path`.
-
----
-
-## Import Configuration
-
-To access the shared agent functions:
-```python
-import sys, os
-sys.path.append(os.path.abspath("../LLM-agent-utilities"))
-from llm_agent_utilities import load_agent
-```
-
-### Explanation
-- `sys.path.append()` temporarily adds the utilities repo to Python’s import path.  
-- This allows direct imports like:
-  ```python
-  from llm_agent_utilities import load_agent
-  ```
-- Python then treats the `llm_agent_utilities` package as if it were installed globally.  
-- No need to publish or install it via `pip`; you always use the latest local version.
+Outputs rely on:
+- `batch-JSON-results/<folder>.txt` (agent response)
+- `batch-image-sets/<folder>/uploaded_urls.txt` (pipe-delimited S3 URLs)
 
 ---
 
-## Example Usage
+## Key Scripts
 
-Run an agent that identifies books from images:
+| Script | Purpose | Important Args |
+| ------ | ------- | -------------- |
+| `rename_and_upload_images.py` | Rename JPGs, upload to S3, record URL manifest | `--bucket`, `--prefix`, `--root`, `--dry-run` |
+| `gemini-autooutput-runner.py` | Run GPT-4o agent across image folders | `--config`, `--output`, `--review` |
+| `generate_ebay_upload_excel.py` | Build a single-listing workbook from one folder | `--folder`, `--output` |
+| `batch_generate_ebay_workbook.py` | Aggregate many folders into one workbook, or append to existing | `--folders`, `--output`, `--append` |
 
-```powershell
-python book-identifier-agent.py
-```
-
-That script loads the YAML agent configuration:
-```yaml
-agent-yamls/book_identifier.yaml
-```
-and executes:
-```python
-from main import run_agent
-run_agent("agent-yamls/book_identifier.yaml", {"image_folder": "images"})
-```
-
-The agent calls OpenAI’s model through `llm_agent_utilities` functions and returns structured JSON:
-```json
-{
-  "title": "The Great Gatsby",
-  "author": "F. Scott Fitzgerald",
-  "edition": "First",
-  "year": "1925",
-  "publisher": "Scribner"
-}
-```
+Each script reads/writes UTF-8 text and standard `.xlsx` using `openpyxl`.
 
 ---
 
-## Future Expansion
+## Configuration
 
-This repo is designed to grow by simply adding new:
-- **Agent YAMLs** in `/agent-yamls/`
-- **Wrapper scripts** like `/book-identifier-agent.py`
-- **Tools** in `/tools/` for custom pre/post-processing
-
-Once stable, the workflow can be automated with **Prefect** to:
-- Trigger agents on schedule  
-- Monitor eBay listing status daily  
-- Generate summaries or alerts automatically
+- Agent behaviour is defined in `gem-yaml-reboot.yaml`. The system prompt enforces:
+  - `price ||| html ||| condition_id` output
+  - Raw HTML (no escaping) with a consistent structure
+  - Condition ID restricted to eBay-approved values
+- Constants for the Excel sheets (category, shipping profiles, etc.) live inside the Excel generator scripts.
 
 ---
 
-## Requirements
+## Environment Setup
 
-See `requirements.txt` for dependencies.
+1. Install dependencies  
+   ```
+   pip install -r requirements.txt
+   ```
+2. Set OpenAI credentials  
+   ```
+   setx OPENAI_API_KEY "your_api_key_here"
+   ```
+   Start a new PowerShell session afterwards.
+3. Ensure AWS credentials are configured for S3 uploads (`boto3` reads the default profile).
 
-Install them:
-```powershell
-pip install -r requirements.txt
+---
+
+## Future Enhancements
+
+- Harden the agent prompt for pricing ranges and edition nuance
+- Add automated HTML review hooks
+- Build an orchestration script to move incoming photos, run the full pipeline, and produce Excel outputs headlessly
+- Expand validation/tests around Excel generation and URL manifests
+
+---
+
+## Project Structure (abridged)
+
+```
+batch-image-sets/           # Source image folders (rename/upload input)
+batch-JSON-results/         # Agent outputs (.txt per folder)
+archives-all/               # Historical Excel artifacts
+generate_ebay_upload_excel.py
+batch_generate_ebay_workbook.py
+rename_and_upload_images.py
+gemini-autooutput-runner.py
+gem-yaml-reboot.yaml
+OCT-18-TO-DO.md
+README.md
 ```
 
-Ensure your OpenAI key is set:
-```powershell
-setx OPENAI_API_KEY "your_api_key_here"
-```
-Then open a new PowerShell session before running the scripts.
+This repository is kept intentionally modular—scripts can be chained manually or wired into future schedulers/automations as needs evolve.***
