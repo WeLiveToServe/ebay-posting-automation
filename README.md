@@ -46,6 +46,8 @@ Outputs rely on:
 | `gemini-autooutput-runner.py` | Run GPT-4o agent across image folders | `--config`, `--output`, `--review` |
 | `generate_ebay_upload_excel.py` | Build a single-listing workbook from one folder | `--folder`, `--output` |
 | `batch_generate_ebay_workbook.py` | Aggregate many folders into one workbook, or append to existing | `--folders`, `--output`, `--append` |
+| `review_html_generator.py` | Extract agent HTML into `reviews/` and optionally open in VS Code | `--folders`, `--open`, `--skip-missing` |
+| `batch_generate_ebay_workbook.py` | Aggregate many folders into one workbook, or append to existing | `--folders`, `--output`, `--append` |
 
 Each script reads/writes UTF-8 text and standard `.xlsx` using `openpyxl`.
 

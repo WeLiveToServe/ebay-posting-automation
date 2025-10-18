@@ -33,8 +33,8 @@
   - Prompt for clearer condition narrative when photos are ambiguous
 
 - **HTML review capability**
-  - Restore/extend review flow so each generated HTML can be opened instantly
-  - Possibly produce a lightweight preview utility tied to the batch outputs
+  - Leverage `review_html_generator.py` to create `reviews/<folder>.html` (auto-open with `--open`)
+  - Consider integrating the review step into the main automation script (batch preview + status)
 
 - **End-to-end automation script**
   - New orchestration Python script should:
