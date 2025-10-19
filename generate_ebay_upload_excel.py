@@ -153,7 +153,12 @@ def main() -> None:
 
     txt_path = RESULTS_DIR / f"{folder}.txt"
     if not txt_path.exists():
-        raise FileNotFoundError(f"Agent output not found: {txt_path}")
+        html_path = RESULTS_DIR / f"{folder}.html"
+        if html_path.exists():
+            # Preserve existing workflow by flipping the edited .html back to .txt on demand.
+            html_path.rename(txt_path)
+        else:
+            raise FileNotFoundError(f"Agent output not found: {txt_path}")
 
     manifest_path = IMAGE_ROOT / folder / URL_MANIFEST
 
@@ -167,4 +172,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

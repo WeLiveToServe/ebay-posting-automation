@@ -1,3 +1,23 @@
+Tonight we locked in the HTML review workflow by editing listings as `.html` in `batch-JSON-results` and letting the queueing script flip them back to `.txt`, keeping Live Preview effortless without breaking the Excel pipeline. We also confirmed review tooling with `review_html_generator.py` so the latest descriptions can be spot-checked quickly before batching.
+
+We chased down the repeated `no url text file found` stop in the Gemini runner and traced it to leftover folders without `uploaded_urls.txt`, so the batch now needs a clean `batch-image-sets/` (or manifest restores) before reprocessing. Drori’s retry and the processed-image stubs highlighted the gap, and tightening error handling remains on deck.
+#
+# pull in jpgs from drive, execute In gdrive path: (7 min for )
+rclone sync gdrive:ebay-upload-pics .
+
+# move folders from gdrive... to batch-image...
+Copy-Item C:\source\folder1, C:\source\folder2 -Destination C:\target - -Recurse
+
+# rename and convert to s3 urls, return upated-urls.txt
+# took 3 min nb
+python rename_and_upload_images.py --bucket keith-ebay-images --prefix books  # use --dry-run to test first
+
+# post to gpt-4o with yaml
+python gemini-autooutput-runner.py --config gem-yaml-reboot.yaml --output batch-JSON-results [--review]
+# develops issues if the renamer stalls. extra directories cannot be left in batch images sets
+# this flow actually needs rework and better error handling. Maybe 
+
+
 # Oct 18 To-Do & Workflow
 
 ## Current Workflow (reference)
