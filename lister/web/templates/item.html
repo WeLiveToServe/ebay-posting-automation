@@ -1,0 +1,138 @@
+{% extends "base.html" %}
+{% block title %}{{ item.sku }}{% endblock %}
+{% block head %}
+{% if item.status in (Status.QUEUED, Status.PROCESSING) %}<meta http-equiv="refresh" content="5">{% endif %}
+{% endblock %}
+{% block body %}
+{% set ident = item.identification %}
+{% set price = item.price %}
+<h1>{{ item.sku }} <span class="badge {{ item.status.value }}">{{ item.status.value }}</span></h1>
+
+{% if item.status in (Status.QUEUED, Status.PROCESSING) %}
+  <p class="flash">Working on it… this page refreshes automatically.</p>
+{% endif %}
+{% if item.error %}<details class="flash error" open><summary>Last run failed</summary><pre>{{ item.error }}</pre></details>{% endif %}
+
+<div class="thumbs large">
+  {% for p in item.photos %}
+  <figure>
+    <a href="/photos/{{ item.sku }}/{{ p.idx }}" target="_blank"><img src="/photos/{{ item.sku }}/{{ p.idx }}" alt=""></a>
+    <figcaption>
+      <form method="post" action="/items/{{ item.sku }}/photos/{{ p.idx }}/move?delta=-1"><button title="Move left">◀</button></form>
+      {% if p.url %}<span title="{{ p.url }}">☁</span>{% endif %}
+      <form method="post" action="/items/{{ item.sku }}/photos/{{ p.idx }}/move?delta=1"><button title="Move right">▶</button></form>
+      <form method="post" action="/items/{{ item.sku }}/photos/{{ p.idx }}/delete?back=item"><button title="Remove">×</button></form>
+    </figcaption>
+  </figure>
+  {% endfor %}
+  <a class="addmore" href="/items/{{ item.sku }}/capture">+ photos</a>
+</div>
+
+{% if ident %}
+  {% if ident.uncertainties or (price and price.warnings) %}
+  <div class="flash warn">
+    <strong>Check before approving</strong>
+    <ul>
+      {% for u in ident.uncertainties %}<li>{{ u }}</li>{% endfor %}
+      {% if price %}{% for w in price.warnings %}<li>{{ w }}</li>{% endfor %}{% endif %}
+    </ul>
+  </div>
+  {% endif %}
+  <p class="hint">Identified as <b>{{ ident.formal_title }}</b> by {{ ident.creator }}
+    {% if ident.edition_statement %}· {{ ident.edition_statement }}{% endif %}
+    · confidence <b>{{ ident.confidence }}</b></p>
+{% endif %}
+
+{% if problems %}
+<div class="flash error"><strong>Not ready to export:</strong> {{ problems|join('; ') }}</div>
+{% endif %}
+
+<form method="post" action="/items/{{ item.sku }}" class="stack">
+  <label>Title <small id="tlen"></small>
+    <input name="title" id="title" maxlength="80" value="{{ item.listing.title }}"></label>
+  <div class="row">
+    <label>Price (USD) <input name="price" inputmode="decimal" value="{{ '%.2f'|format(item.listing.price) if item.listing.price else '' }}"></label>
+    <label>Condition
+      <select name="condition_id">
+        {% for code, label in (cat.conditions.items() if cat else []) %}
+        <option value="{{ code }}" {% if code == item.listing.condition_id %}selected{% endif %}>{{ code }} {{ label }}</option>
+        {% endfor %}
+      </select></label>
+    <label>Category
+      <select name="category">
+        {% for key, c in categories.items() %}
+        <option value="{{ key }}" {% if key == item.listing.category %}selected{% endif %}>{{ c.name }}</option>
+        {% endfor %}
+      </select></label>
+  </div>
+
+  {% if price %}
+  <div class="pricebox">
+    <div><b>Suggested ${{ '%.2f'|format(price.list_price) }}</b> (range ${{ '%.2f'|format(price.low) }}–${{ '%.2f'|format(price.high) }}, {{ price.confidence }} confidence)</div>
+    <p>{{ price.rationale }}</p>
+    {% for name, s in stats.items() %}
+      <small>{{ name|capitalize }} comps (strong/partial, incl. shipping): {{ s.count }} · median ${{ '%.2f'|format(s.median) }} · ${{ '%.2f'|format(s.min) }}–${{ '%.2f'|format(s.max) }}</small><br>
+    {% endfor %}
+    <details>
+      <summary>{{ item.comps|length }} comparables</summary>
+      <table class="comps">
+        <tr><th>Src</th><th>Price</th><th>Match</th><th>Listing</th></tr>
+        {% for c in item.comps %}
+        <tr class="rel-{{ c.relevance or 'none' }}">
+          <td>{{ {'ebay_active': 'eBay ask', 'ebay_sold': 'eBay sold', 'web': 'web'}[c.source] }}</td>
+          <td>${{ '%.2f'|format(c.price) }}{% if c.shipping %}<br><small>+{{ '%.2f'|format(c.shipping) }}</small>{% endif %}</td>
+          <td>{{ c.relevance or '' }}</td>
+          <td>{% if c.url %}<a href="{{ c.url }}" target="_blank" rel="noopener">{{ c.title }}</a>{% else %}{{ c.title }}{% endif %}
+            <br><small>{{ c.condition or '' }} {{ c.sold_date or '' }} {{ c.notes or '' }}</small></td>
+        </tr>
+        {% endfor %}
+      </table>
+    </details>
+    {% if item.research_summary %}<details><summary>Web research notes</summary><pre class="wrap">{{ item.research_summary }}</pre></details>{% endif %}
+  </div>
+  {% endif %}
+
+  <label>Description (HTML)
+    <textarea name="description_html" rows="8">{{ item.listing.description_html }}</textarea></label>
+  <details><summary>Preview description</summary><div class="preview">{{ item.listing.description_html|safe }}</div></details>
+
+  {% if cat %}
+  <fieldset>
+    <legend>Item specifics</legend>
+    <label>ISBN <input name="isbn" value="{{ item.listing.isbn }}"></label>
+    {% for name in cat.aspects %}
+    <label>{{ name }}{% if name in cat.required %} *{% endif %}
+      <input name="aspect__{{ name }}" value="{{ item.listing.aspects.get(name, '') }}"></label>
+    {% endfor %}
+  </fieldset>
+  {% endif %}
+
+  <div class="row">
+    <label>Shelf / bin <input name="shelf_location" value="{{ item.shelf_location }}"></label>
+  </div>
+  <label>Notes for the cataloguer <textarea name="notes" rows="2">{{ item.notes }}</textarea></label>
+
+  <div class="row actions">
+    <button name="action" value="save">Save</button>
+    {% if item.status == Status.APPROVED %}
+      <button name="action" value="unapprove">Unapprove</button>
+    {% else %}
+      <button name="action" value="approve" class="primary">Save &amp; approve</button>
+    {% endif %}
+  </div>
+</form>
+
+<section class="rerun">
+  <h3>Re-run</h3>
+  <p class="hint">Re-running one step keeps your edits to the other fields; "everything" rebuilds the draft.</p>
+  {% for step, label in [('identify','Identify'), ('price','Price'), ('describe','Description'), ('all','Everything')] %}
+  <form method="post" action="/items/{{ item.sku }}/rerun"><input type="hidden" name="step" value="{{ step }}"><button>{{ label }}</button></form>
+  {% endfor %}
+  <form method="post" action="/items/{{ item.sku }}/delete" onsubmit="return confirm('Delete {{ item.sku }}?')"><button class="danger">Delete item</button></form>
+</section>
+
+<script>
+const t = document.getElementById("title"), l = document.getElementById("tlen");
+const upd = () => l.textContent = `${t.value.length}/80`; t.addEventListener("input", upd); upd();
+</script>
+{% endblock %}

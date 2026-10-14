@@ -1,0 +1,65 @@
+:root {
+  --bg: #f7f6f3; --fg: #1d1d1b; --muted: #6b6a66; --card: #fff; --line: #dddad3;
+  --accent: #2f5d50; --accent-fg: #fff; --warn: #fff4d6; --error: #fde4e1; --ok: #e3f1ea;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #171716; --fg: #ecebe7; --muted: #a09e98; --card: #22221f; --line: #3a3935;
+          --accent: #6fb39c; --accent-fg: #0f1a16; --warn: #3b3220; --error: #3d2422; --ok: #1f3329; }
+}
+* { box-sizing: border-box; }
+body { margin: 0; font: 16px/1.45 system-ui, sans-serif; background: var(--bg); color: var(--fg); }
+main { max-width: 900px; margin: 0 auto; padding: 16px; }
+a { color: var(--accent); }
+h1 { font-size: 1.4rem; margin: .2em 0 .6em; }
+h2 { font-size: 1.1rem; margin: 1.4em 0 .5em; }
+.bar { display: flex; justify-content: space-between; align-items: center; padding: 10px 16px;
+       background: var(--card); border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 2; }
+.bar form { margin: 0; }
+.brand { font-weight: 700; text-decoration: none; color: var(--fg); }
+button, .camera, .addmore { font: inherit; padding: 10px 14px; border-radius: 8px; border: 1px solid var(--line);
+         background: var(--card); color: var(--fg); cursor: pointer; }
+button.primary, .camera { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
+button.danger { color: #c0392b; }
+input, select, textarea { font: inherit; width: 100%; padding: 9px; border-radius: 6px;
+       border: 1px solid var(--line); background: var(--card); color: var(--fg); }
+label { display: block; font-size: .9rem; color: var(--muted); }
+label > input, label > select, label > textarea { margin-top: 3px; color: var(--fg); }
+.stack > * { margin-bottom: 12px; }
+.row { display: flex; gap: 10px; flex-wrap: wrap; }
+.row > * { flex: 1 1 140px; }
+.hint { color: var(--muted); font-size: .9rem; }
+.flash { padding: 10px 12px; border-radius: 8px; background: var(--ok); }
+.flash.warn { background: var(--warn); }
+.flash.error { background: var(--error); }
+.flash ul { margin: .3em 0 0; padding-left: 1.2em; }
+.count { color: var(--muted); font-weight: 400; }
+.cards { list-style: none; padding: 0; margin: 0; display: grid; gap: 8px; }
+.cards a { display: flex; gap: 12px; align-items: center; padding: 8px; background: var(--card);
+           border: 1px solid var(--line); border-radius: 10px; text-decoration: none; color: var(--fg); }
+.cards img, .noimg { width: 56px; height: 56px; object-fit: cover; border-radius: 6px; background: var(--line); flex: none; }
+.cards small { display: block; color: var(--muted); }
+.camera { display: block; text-align: center; font-size: 1.1rem; padding: 18px; margin: 12px 0; }
+.camera input { display: none; }
+.thumbs { display: grid; grid-template-columns: repeat(auto-fill, minmax(90px, 1fr)); gap: 8px; margin: 12px 0; }
+.thumbs.large { grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); }
+.thumbs figure { margin: 0; position: relative; }
+.thumbs img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 8px; display: block; }
+.thumbs figcaption { display: flex; justify-content: space-between; align-items: center; margin-top: 2px; }
+.thumbs figcaption form, .thumbs figure > form { margin: 0; }
+.thumbs figcaption button { padding: 2px 8px; }
+.thumbs .x { position: absolute; top: 4px; right: 4px; padding: 0 8px; border-radius: 50%; }
+.addmore { display: flex; align-items: center; justify-content: center; aspect-ratio: 1; text-decoration: none; }
+.badge { font-size: .75rem; padding: 2px 8px; border-radius: 99px; background: var(--line); vertical-align: middle; }
+.badge.approved, .badge.exported { background: var(--ok); }
+.badge.error { background: var(--error); }
+.pricebox { padding: 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--card); }
+.pricebox p { margin: .4em 0; }
+.comps { width: 100%; border-collapse: collapse; font-size: .85rem; margin-top: 8px; }
+.comps td, .comps th { padding: 6px 4px; border-top: 1px solid var(--line); vertical-align: top; text-align: left; }
+.comps tr.rel-weak, .comps tr.rel-none { opacity: .55; }
+.preview { padding: 12px; background: var(--card); border: 1px solid var(--line); border-radius: 8px; }
+fieldset { border: 1px solid var(--line); border-radius: 10px; display: grid; gap: 8px;
+           grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); }
+pre { white-space: pre-wrap; font-size: .8rem; }
+.rerun form { display: inline-block; margin: 0 6px 6px 0; }
+.actions { position: sticky; bottom: 0; background: var(--bg); padding: 10px 0; }

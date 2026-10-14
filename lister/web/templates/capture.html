@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block title %}Capture {{ item.sku }}{% endblock %}
+{% block body %}
+<h1>{{ item.sku }}</h1>
+<p class="hint">Suggested shots: front cover, spine, back, title page, copyright page, then any flaws. The first photo becomes the eBay gallery image.</p>
+
+<label class="camera">
+  📷 Take / add photos
+  <input id="file" type="file" accept="image/*" capture="environment" multiple>
+</label>
+<p id="status" class="hint"></p>
+
+<div id="thumbs" class="thumbs">
+  {% for p in item.photos %}
+  <figure>
+    <img src="/photos/{{ item.sku }}/{{ p.idx }}" alt="">
+    <form method="post" action="/items/{{ item.sku }}/photos/{{ p.idx }}/delete"><button class="x" title="Remove">×</button></form>
+  </figure>
+  {% endfor %}
+</div>
+
+<form method="post" action="/items/{{ item.sku }}/queue" class="stack">
+  <label>Notes for the cataloguer (flaws, edition info, anything not visible)
+    <textarea name="notes" rows="3">{{ item.notes }}</textarea></label>
+  <div class="row">
+    <label>Shelf / bin <input name="shelf_location" value="{{ item.shelf_location }}"></label>
+    <label>Cost paid <input name="cost" inputmode="decimal" value="{{ item.cost or '' }}"></label>
+  </div>
+  <div class="row">
+    <button name="next" value="1" class="primary">Done · next item</button>
+    <button>Done</button>
+  </div>
+</form>
+
+<script>
+const input = document.getElementById("file");
+const thumbs = document.getElementById("thumbs");
+const status = document.getElementById("status");
+let pending = 0;
+input.addEventListener("change", async () => {
+  for (const file of input.files) {
+    pending++; status.textContent = `Uploading ${pending}…`;
+    const body = new FormData(); body.append("file", file);
+    try {
+      const res = await fetch("/items/{{ item.sku }}/photos", {method: "POST", body});
+      if (!res.ok) throw new Error(await res.text());
+      const data = await res.json();
+      const fig = document.createElement("figure");
+      fig.innerHTML = `<img src="${data.src}" alt="">`;
+      thumbs.appendChild(fig);
+    } catch (e) { alert("Upload failed: " + e.message); }
+    pending--; status.textContent = pending ? `Uploading ${pending}…` : "";
+  }
+  input.value = "";
+});
+</script>
+{% endblock %}

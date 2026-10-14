@@ -1,0 +1,46 @@
+# Copy to config.toml and edit. Secrets (API keys) go in .env, not here.
+
+[seller]
+location = "Newfields, NH"
+# Business policy names exactly as they appear in eBay Seller Hub.
+shipping_profile = "USPS Media Mail"
+return_profile = "Returns allowed within 30 days"
+payment_profile = "Immediate payment managed via eBay"
+
+[listing]
+default_category = "books"     # key from lister/categories.py
+format = "FixedPrice"
+duration = "GTC"
+best_offer = true
+# Auto-accept / auto-decline offers as a fraction of the list price (blank to skip).
+best_offer_auto_accept = 0.90
+best_offer_minimum = 0.75
+sku_prefix = "BK"
+
+[r2]
+bucket = "ebay-photos"
+# Public base URL for the bucket. Use a custom domain connected to the bucket
+# (e.g. https://photos.example.com). r2.dev URLs are rate-limited and not meant
+# for production traffic.
+public_base_url = "https://photos.example.com"
+prefix = "listings"
+
+[photos]
+max_edge_px = 1600      # eBay recommends >= 1600px on the long edge for zoom
+jpeg_quality = 88
+
+[models]
+# Every step defaults to Claude Opus 5.5; override per step if you want.
+identify = "claude-opus-5-5"
+price = "claude-opus-5-5"
+describe = "claude-opus-5-5"
+
+[pricing]
+# Comparable sources run in order. Available: "ebay_active", "web_research".
+sources = ["ebay_active", "web_research"]
+ebay_marketplace = "EBAY_US"
+max_active_comps = 40
+
+[server]
+host = "0.0.0.0"
+port = 8765

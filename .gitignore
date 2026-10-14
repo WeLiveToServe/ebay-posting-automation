@@ -1,0 +1,14 @@
+# Runtime data (photos, database, exports) and secrets
+data/
+.env
+config.toml
+
+# Python
+.venv/
+__pycache__/
+*.egg-info/
+.pytest_cache/
+
+# Local tools / Office lock files
+ngrok.exe
+~$*

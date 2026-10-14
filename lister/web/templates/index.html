@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block head %}
+{% if groups[Status.QUEUED] or groups[Status.PROCESSING] %}<meta http-equiv="refresh" content="10">{% endif %}
+{% endblock %}
+{% block body %}
+{% if msg %}<p class="flash">{{ msg }}</p>{% endif %}
+{% if not r2_ready %}<p class="flash warn">R2 is not configured; photos stay local and export will be blocked until they have public URLs.</p>{% endif %}
+
+{% set order = [Status.REVIEW, Status.ERROR, Status.QUEUED, Status.PROCESSING, Status.CAPTURING, Status.APPROVED, Status.EXPORTED] %}
+{% for status in order %}
+  {% set items = groups[status] %}
+  {% if items %}
+  <section>
+    <h2>{{ status.value|capitalize }} <span class="count">{{ items|length }}</span></h2>
+    <ul class="cards">
+      {% for item in items %}
+      <li>
+        <a href="{{ '/items/' ~ item.sku ~ ('/capture' if status == Status.CAPTURING else '') }}">
+          {% if item.photos %}<img src="/photos/{{ item.sku }}/{{ item.photos[0].idx }}" alt="" loading="lazy">{% else %}<div class="noimg"></div>{% endif %}
+          <div>
+            <strong>{{ item.listing.title or (item.identification.listing_title if item.identification else item.sku) }}</strong>
+            <small>{{ item.sku }}{% if item.listing.price %} · ${{ '%.2f'|format(item.listing.price) }}{% endif %}{% if item.shelf_location %} · {{ item.shelf_location }}{% endif %}{% if item.exported_file %} · {{ item.exported_file }}{% endif %}</small>
+          </div>
+        </a>
+      </li>
+      {% endfor %}
+    </ul>
+    {% if status == Status.APPROVED %}
+      <form method="post" action="/export"><button class="primary">Export {{ items|length }} approved to eBay CSV</button></form>
+    {% endif %}
+  </section>
+  {% endif %}
+{% endfor %}
+
+{% if exports %}
+<section>
+  <h2>Recent exports</h2>
+  <ul>{% for name in exports %}<li><a href="/exports/{{ name }}">{{ name }}</a></li>{% endfor %}</ul>
+  <p class="hint">Upload at Seller Hub → Reports → Uploads.</p>
+</section>
+{% endif %}
+{% endblock %}
