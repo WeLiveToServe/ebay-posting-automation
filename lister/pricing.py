@@ -31,6 +31,7 @@ class EbayBrowse:
             raise RuntimeError("EBAY_CLIENT_ID / EBAY_CLIENT_SECRET are not set")
         self.marketplace = cfg.ebay_marketplace
         self.limit = cfg.max_active_comps
+        self.own_seller = settings.seller.ebay_username.lower()
         self._auth = (cfg.ebay_client_id, cfg.ebay_client_secret)
         self._token = ""
         self._expires = 0.0
@@ -67,6 +68,8 @@ class EbayBrowse:
             price = s.get("price") or s.get("currentBidPrice") or {}
             if price.get("currency", "USD") != "USD" or "value" not in price:
                 continue
+            if self.own_seller and s.get("seller", {}).get("username", "").lower() == self.own_seller:
+                continue  # our own listing is not a comparable
             ship = (s.get("shippingOptions") or [{}])[0].get("shippingCost", {}).get("value")
             comps.append(
                 Comp(
@@ -96,10 +99,27 @@ def active_comps(settings: Settings, item: Item) -> list[Comp]:
 
 RESEARCH_SYSTEM = """You research second-hand book prices for a seller. Prefer evidence of
 what copies actually SOLD for (eBay sold listings, auction records such as Rare Book Hub,
-Heritage, or PBA) over asking prices (AbeBooks, Biblio, BookFinder, Amazon). Match edition,
-printing, binding, and presence of dust jacket as closely as possible, and say how each
-comparable differs from the seller's copy. Report every price you found with its URL and
-date, clearly labelled SOLD or ASKING. If you find little, say so; never invent figures."""
+Heritage, Bonhams, or PBA) over asking prices (AbeBooks, Biblio, BookFinder, Amazon). Match
+edition, printing, binding, and presence of dust jacket as closely as possible, and say how
+each comparable differs from the seller's copy. Report every price you found with its URL and
+date, clearly labelled SOLD or ASKING. If you find little, say so; never invent figures.
+
+The seller's notes are first-hand facts about the physical copy; trust them over anything
+inferred from photos."""
+
+ANTIQUARIAN_GUIDANCE = """
+This is an antiquarian/collectible book, where rare-book dealers set the market. Work from text
+search terms (title, author, publisher, year, printing) and:
+- Read dealer listings directly with web_fetch: AbeBooks search results are the richest source,
+  e.g. https://www.abebooks.com/servlet/SearchResults?an=AUTHOR&tn=TITLE&yrl=YEAR&yrh=YEAR&sortby=1
+  (yrl/yrh bound the publication year; also try without them, and the abebooks.co.uk site for
+  British books). Also check Biblio, viaLibri, ILAB members and specialist dealers (e.g. Peter
+  Harrington, Between the Covers), plus auction archives.
+- Bracket the copy: find (1) copies of the same printing/issue, (2) the first edition, and
+  (3) later reprints, so the price can be placed between them. Note issue points dealers cite
+  (binding design, plate count, ads, title-page date) and whether the seller's copy has them.
+- Record each dealer copy's condition and completeness (plates present, hinges), because those
+  explain most of the price spread."""
 
 
 def web_research(settings: Settings, item: Item) -> str:
@@ -116,7 +136,15 @@ def web_research(settings: Settings, item: Item) -> str:
         "notable": ident.notable_features,
     }
     prompt = f"Find recent sold and asking prices for this copy:\n{facts}"
-    return llm.research(settings.models.price, RESEARCH_SYSTEM, prompt, effort="medium")
+    if item.notes.strip():
+        prompt += f"\n\nSeller's notes about this copy:\n{item.notes.strip()}"
+    if settings.seller.ebay_username:
+        prompt += (f"\n\nIgnore any listing by the eBay seller '{settings.seller.ebay_username}': "
+                   "that is this seller's own copy, not a comparable.")
+    if ident.category == "antiquarian":
+        return llm.research(settings.models.price, RESEARCH_SYSTEM + ANTIQUARIAN_GUIDANCE, prompt,
+                            max_searches=12, max_fetches=10, effort="high")
+    return llm.research(settings.models.price, RESEARCH_SYSTEM, prompt, max_fetches=4, effort="medium")
 
 
 SUGGEST_SYSTEM = """You set fixed prices for a small eBay bookseller who wants items to sell
@@ -127,7 +155,13 @@ Adjust for condition and edition differences between comparables and this copy, 
 include shipping when comparing (buyers compare total cost). For common books with many
 cheap copies, price near the low end of comparable listings. If evidence is thin or
 conflicting, give a wider range, set confidence to low, and explain in `warnings`
-what a human should check (for example, an unverified first printing)."""
+what a human should check (for example, an unverified first printing).
+
+The seller's notes are first-hand facts about the copy (completeness, defects, provenance);
+they override uncertainties from the photo cataloguing. For antiquarian books, place the copy
+between the dealer prices for the first edition and for later reprints according to how many
+of the first edition's points it shares, and remember dealer asking prices for scarce books
+are often realistic: do not price a complete, collectible copy like a common reading copy."""
 
 
 def suggest(settings: Settings, item: Item, active: list[Comp], research: str) -> PriceSuggestion:
@@ -142,6 +176,8 @@ def suggest(settings: Settings, item: Item, active: list[Comp], research: str) -
         f"eBay active listings (asking prices):\n{active_lines or '(none found)'}\n\n"
         f"Web research notes:\n{research or '(not run)'}\n"
     )
+    if item.notes.strip():
+        prompt += f"\nSeller's notes about this copy:\n{item.notes.strip()}\n"
     if item.cost is not None:
         prompt += f"\nSeller paid ${item.cost:.2f} for this copy.\n"
     return llm.parse(settings.models.price, SUGGEST_SYSTEM, prompt, PriceSuggestion, effort="high")
@@ -167,7 +203,11 @@ def price(settings: Settings, item: Item) -> None:
 
     suggestion = suggest(settings, item, active, research)
     suggestion.warnings = problems + suggestion.warnings
+    apply_suggestion(item, suggestion, active, research)
 
+
+def apply_suggestion(item: Item, suggestion: PriceSuggestion, active: list[Comp], research: str) -> None:
+    """Store a suggestion (from the API or an agent session) with its rated comps on the item."""
     for rated in suggestion.rated_active:
         if 0 <= rated.index < len(active):
             active[rated.index].relevance = rated.relevance
@@ -184,7 +224,7 @@ def price(settings: Settings, item: Item) -> None:
         )
         for rc in suggestion.research_comps
     ]
-    item.comps = researched + active
+    item.comps = researched + [c for c in active if c.source == "ebay_active"]
     item.research_summary = research
     item.price = suggestion
 

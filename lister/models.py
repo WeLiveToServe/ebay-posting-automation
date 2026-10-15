@@ -24,8 +24,9 @@ class Status(StrEnum):
     QUEUED = "queued"         # waiting for the worker
     PROCESSING = "processing"
     REVIEW = "review"         # drafts ready for a human
-    APPROVED = "approved"     # will be included in the next export
-    EXPORTED = "exported"
+    APPROVED = "approved"     # will be included in the next export / publish
+    EXPORTED = "exported"     # written to a CSV for Seller Hub upload
+    LISTED = "listed"         # published to eBay through the API
     ERROR = "error"
 
 
@@ -145,3 +146,4 @@ class Item(BaseModel):
     listing: ListingFields = Field(default_factory=ListingFields)
     error: str = ""
     exported_file: str = ""
+    ebay_listing_id: str = ""

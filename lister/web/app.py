@@ -29,7 +29,8 @@ def create_app(settings: Settings | None = None, start_worker: bool = True) -> F
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
-        worker = pipeline.Worker(settings, store) if start_worker else None
+        # In agent mode a Claude Code / Codex session processes the queue instead.
+        worker = pipeline.Worker(settings, store) if start_worker and settings.pipeline.llm == "api" else None
         if worker:
             worker.start()
         yield
@@ -71,7 +72,8 @@ def create_app(settings: Settings | None = None, start_worker: bool = True) -> F
         groups = {s: [i for i in items if i.status == s] for s in Status}
         exports = sorted(settings.exports_dir.glob("*.csv"), reverse=True)[:5] if settings.exports_dir.exists() else []
         return page(request, "index.html", groups=groups, msg=msg, exports=[p.name for p in exports],
-                    r2_ready=settings.r2.configured)
+                    r2_ready=settings.r2.configured, can_publish=bool(settings.seller.ebay_refresh_token),
+                    agent_mode=settings.pipeline.llm == "agent")
 
     @app.post("/items")
     def new_item():
@@ -166,7 +168,7 @@ def create_app(settings: Settings | None = None, start_worker: bool = True) -> F
         steps = pipeline.STEPS if step == "all" else (step,)
         if any(s not in pipeline.STEPS for s in steps):
             raise HTTPException(400, f"Unknown step {step}")
-        if step == "all":
+        if step == "all" or settings.pipeline.llm == "agent":  # agent sessions pick queued items up
             item.status = Status.QUEUED
             store.save(item)
         else:
@@ -184,6 +186,16 @@ def create_app(settings: Settings | None = None, start_worker: bool = True) -> F
     def run_export():
         path, problems = pipeline.export_approved(settings, store)
         parts = [f"Exported {path.name}" if path else "Nothing exported"]
+        parts += [f"{sku}: {'; '.join(errs)}" for sku, errs in problems.items()]
+        return home(" | ".join(parts))
+
+    @app.post("/publish")
+    def run_publish():
+        try:
+            listed, problems = pipeline.publish_approved(settings, store)
+        except RuntimeError as exc:  # missing eBay credentials
+            return home(str(exc))
+        parts = [f"Listed {len(listed)} on eBay" if listed else "Nothing listed"]
         parts += [f"{sku}: {'; '.join(errs)}" for sku, errs in problems.items()]
         return home(" | ".join(parts))
 

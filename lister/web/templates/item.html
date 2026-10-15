@@ -7,6 +7,7 @@
 {% set ident = item.identification %}
 {% set price = item.price %}
 <h1>{{ item.sku }} <span class="badge {{ item.status.value }}">{{ item.status.value }}</span></h1>
+{% if item.ebay_listing_id %}<p class="flash">Live on eBay: <a href="https://www.ebay.com/itm/{{ item.ebay_listing_id }}" target="_blank" rel="noopener">item {{ item.ebay_listing_id }} ↗</a></p>{% endif %}
 
 {% if item.status in (Status.QUEUED, Status.PROCESSING) %}
   <p class="flash">Working on it… this page refreshes automatically.</p>

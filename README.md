@@ -33,6 +33,32 @@ Settings → Custom Domains). Then set `[r2].public_base_url` to that domain. Th
 URLs work for testing, but Cloudflare rate-limits them and says not to use them in
 production.
 
+## Two ways to run the AI steps
+
+Identify, price and describe can run in either of two modes. Choose with `[pipeline] llm` in
+`config.toml`.
+
+- **`agent`: a Claude Code or Codex session does the work on your subscription.** It does not
+  use Anthropic API credit. Open a session in this folder and say, for example, "process the
+  queue", "reprice my live listings" or "rewrite listing 177413428830".
+  - The session follows [AGENTS.md](AGENTS.md); `CLAUDE.md` points Claude Code there.
+  - It reads the photos itself and researches prices with its own web tools, giving more
+    weight to rare-book dealers.
+  - It returns JSON through `python -m lister agent ...`. The same checks and post-processing
+    run as in API mode.
+  - It never publishes or reprices without your go-ahead.
+- **`api`: the background worker calls the Anthropic API.** Items are processed as soon as
+  you queue them. This mode needs `ANTHROPIC_API_KEY` with credit.
+
+Live listings, including ones made in Seller Hub, are managed with `python -m lister ebay ...`:
+
+| Command | What it does |
+|---|---|
+| `listings` | Lists your active listings |
+| `reprice` | Changes the price; Best Offer thresholds follow |
+| `end` | Ends the listing |
+| `adopt` | Brings a listing under app control so it can be rewritten and re-published |
+
 ## Daily use
 
 ```powershell
@@ -47,6 +73,24 @@ production.
 4. Open each item under **Review**. Check the warnings, compare against the linked comps, edit anything that's wrong, then tap **Save & approve**.
 5. Tap **Export N approved to eBay CSV** and upload the file at Seller Hub → Reports → Uploads.
 
+### Publishing straight to eBay (instead of the CSV)
+
+**Publish N approved to eBay** creates live listings through the Sell Inventory API. It uses your
+business policies by the names in `[seller]`, an inventory location built from `location` and
+`postal_code`, and the item's SKU as the eBay custom label. Publishing an item again revises its
+live listing; it does not create a duplicate. The eBay item number is shown on the item page.
+
+To set it up once:
+1. Go to developer.ebay.com → Application Keys → **User Tokens** for the Production keyset.
+   Add an eBay redirect URL with OAuth enabled.
+2. Put its RuName in `.env` as `EBAY_RUNAME`.
+3. Run `python -m lister ebay-login`, approve access in the browser, and paste back the URL you
+   land on. This saves `EBAY_REFRESH_TOKEN`, which is valid for about 18 months. Revoke it any time
+   in your eBay account settings.
+
+Seller Hub can only make limited edits to listings created through the API, so revise them by
+re-publishing from the app.
+
 Command-line equivalents:
 
 | Command | What it does |
@@ -55,6 +99,8 @@ Command-line equivalents:
 | `python -m lister process [SKU ...] [--steps identify,price]` | Processes queued or failed items without starting the server. |
 | `python -m lister list [review approved ...]` | Lists items, optionally filtered by status. |
 | `python -m lister export` | Writes the approved items to a CSV. |
+| `python -m lister publish [SKU ...]` | Publishes approved items live on eBay through the API. |
+| `python -m lister ebay-login` | Authorizes API publishing for your seller account, one time. |
 
 Runtime data is kept in `data/` and is gitignored:
 - `originals/`: your photos, never modified.

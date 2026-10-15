@@ -38,6 +38,7 @@ label > input, label > select, label > textarea { margin-top: 3px; color: var(--
            border: 1px solid var(--line); border-radius: 10px; text-decoration: none; color: var(--fg); }
 .cards img, .noimg { width: 56px; height: 56px; object-fit: cover; border-radius: 6px; background: var(--line); flex: none; }
 .cards small { display: block; color: var(--muted); }
+.cards a.ext { display: inline-block; padding: 2px 8px 6px; background: none; border: none; color: var(--accent, inherit); font-size: .85rem; }
 .camera { display: block; text-align: center; font-size: 1.1rem; padding: 18px; margin: 12px 0; }
 .camera input { display: none; }
 .thumbs { display: grid; grid-template-columns: repeat(auto-fill, minmax(90px, 1fr)); gap: 8px; margin: 12px 0; }
@@ -50,7 +51,7 @@ label > input, label > select, label > textarea { margin-top: 3px; color: var(--
 .thumbs .x { position: absolute; top: 4px; right: 4px; padding: 0 8px; border-radius: 50%; }
 .addmore { display: flex; align-items: center; justify-content: center; aspect-ratio: 1; text-decoration: none; }
 .badge { font-size: .75rem; padding: 2px 8px; border-radius: 99px; background: var(--line); vertical-align: middle; }
-.badge.approved, .badge.exported { background: var(--ok); }
+.badge.approved, .badge.exported, .badge.listed { background: var(--ok); }
 .badge.error { background: var(--error); }
 .pricebox { padding: 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--card); }
 .pricebox p { margin: .4em 0; }

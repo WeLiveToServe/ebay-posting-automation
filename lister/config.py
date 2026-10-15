@@ -15,9 +15,14 @@ ROOT = Path(__file__).resolve().parent.parent
 @dataclass(frozen=True)
 class Seller:
     location: str = "Newfields, NH"
+    postal_code: str = ""
+    ebay_username: str = ""  # your own listings are excluded from comps
     shipping_profile: str = ""
     return_profile: str = ""
     payment_profile: str = ""
+    merchant_location_key: str = "home"  # inventory location created for API publishing
+    ebay_runame: str = ""
+    ebay_refresh_token: str = ""
 
 
 @dataclass(frozen=True)
@@ -68,6 +73,13 @@ class Pricing:
 
 
 @dataclass(frozen=True)
+class Pipeline:
+    # "api": the background worker calls the Anthropic API for identify/price/describe.
+    # "agent": queued items wait for a Claude Code / Codex session (see AGENTS.md).
+    llm: str = "api"
+
+
+@dataclass(frozen=True)
 class Server:
     host: str = "0.0.0.0"
     port: int = 8765
@@ -83,6 +95,7 @@ class Settings:
     photos: Photos = field(default_factory=Photos)
     models: Models = field(default_factory=Models)
     pricing: Pricing = field(default_factory=Pricing)
+    pipeline: Pipeline = field(default_factory=Pipeline)
     server: Server = field(default_factory=Server)
 
     @property
@@ -121,7 +134,13 @@ def load_settings(config_path: Path | None = None, data_dir: Path | None = None)
     env = os.environ.get
     return Settings(
         data_dir=data,
-        seller=_section(raw, "seller", Seller),
+        seller=_section(
+            raw,
+            "seller",
+            Seller,
+            ebay_runame=env("EBAY_RUNAME", ""),
+            ebay_refresh_token=env("EBAY_REFRESH_TOKEN", ""),
+        ),
         listing=_section(raw, "listing", Listing),
         r2=_section(
             raw,
@@ -140,5 +159,6 @@ def load_settings(config_path: Path | None = None, data_dir: Path | None = None)
             ebay_client_id=env("EBAY_CLIENT_ID", ""),
             ebay_client_secret=env("EBAY_CLIENT_SECRET", ""),
         ),
+        pipeline=_section(raw, "pipeline", Pipeline),
         server=_section(raw, "server", Server, access_token=env("LISTER_ACCESS_TOKEN", "")),
     )

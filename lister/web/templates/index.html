@@ -1,17 +1,20 @@
 {% extends "base.html" %}
 {% block head %}
-{% if groups[Status.QUEUED] or groups[Status.PROCESSING] %}<meta http-equiv="refresh" content="10">{% endif %}
+{% if (groups[Status.QUEUED] and not agent_mode) or groups[Status.PROCESSING] %}<meta http-equiv="refresh" content="10">{% endif %}
 {% endblock %}
 {% block body %}
 {% if msg %}<p class="flash">{{ msg }}</p>{% endif %}
 {% if not r2_ready %}<p class="flash warn">R2 is not configured; photos stay local and export will be blocked until they have public URLs.</p>{% endif %}
 
-{% set order = [Status.REVIEW, Status.ERROR, Status.QUEUED, Status.PROCESSING, Status.CAPTURING, Status.APPROVED, Status.EXPORTED] %}
+{% set order = [Status.REVIEW, Status.ERROR, Status.QUEUED, Status.PROCESSING, Status.CAPTURING, Status.APPROVED, Status.LISTED, Status.EXPORTED] %}
 {% for status in order %}
   {% set items = groups[status] %}
   {% if items %}
   <section>
     <h2>{{ status.value|capitalize }} <span class="count">{{ items|length }}</span></h2>
+    {% if status == Status.QUEUED and agent_mode %}
+      <p class="hint">Waiting for an agent session. In the repo folder run <code>claude</code> or <code>codex</code> and say "process the queue".</p>
+    {% endif %}
     <ul class="cards">
       {% for item in items %}
       <li>
@@ -22,11 +25,15 @@
             <small>{{ item.sku }}{% if item.listing.price %} · ${{ '%.2f'|format(item.listing.price) }}{% endif %}{% if item.shelf_location %} · {{ item.shelf_location }}{% endif %}{% if item.exported_file %} · {{ item.exported_file }}{% endif %}</small>
           </div>
         </a>
+        {% if item.ebay_listing_id %}<a class="ext" href="https://www.ebay.com/itm/{{ item.ebay_listing_id }}" target="_blank" rel="noopener">View on eBay ↗</a>{% endif %}
       </li>
       {% endfor %}
     </ul>
     {% if status == Status.APPROVED %}
-      <form method="post" action="/export"><button class="primary">Export {{ items|length }} approved to eBay CSV</button></form>
+      {% if can_publish %}
+      <form method="post" action="/publish" onsubmit="return confirm('Publish {{ items|length }} live listing(s) on eBay?')"><button class="primary">Publish {{ items|length }} approved to eBay</button></form>
+      {% endif %}
+      <form method="post" action="/export"><button{% if not can_publish %} class="primary"{% endif %}>Export {{ items|length }} approved to eBay CSV</button></form>
     {% endif %}
   </section>
   {% endif %}

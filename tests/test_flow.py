@@ -6,14 +6,15 @@ import csv
 import io
 from dataclasses import replace
 
+import httpx
 import pytest
 from fastapi.testclient import TestClient
 from PIL import Image
 
-from lister import export, llm, pipeline, pricing
+from lister import export, llm, pipeline, pricing, publish
 from lister.config import R2, Settings
 from lister.models import (
-    Aspect, Comp, DescriptionDraft, Identification, Item, PriceSuggestion, RatedComp, ResearchComp, Status,
+    Aspect, Comp, DescriptionDraft, Identification, Item, Photo, PriceSuggestion, RatedComp, ResearchComp, Status,
 )
 from lister.store import Store
 from lister.web.app import create_app
@@ -185,3 +186,162 @@ def test_schemas_are_valid_for_structured_outputs():
     for model in (Identification, PriceSuggestion, DescriptionDraft):
         schema = transform_schema(model)
         assert schema["type"] == "object"
+
+
+class FakeEbay:
+    """Stands in for the eBay Sell APIs; records every call."""
+
+    def __init__(self):
+        self.calls: list[tuple[str, str, dict | None]] = []
+        self.offers: dict[str, str] = {}
+
+    def post(self, url, **kwargs):  # token endpoint
+        assert kwargs["data"]["grant_type"] == "refresh_token"
+        return httpx.Response(200, json={"access_token": "user-token", "expires_in": 7200},
+                              request=httpx.Request("POST", url))
+
+    def request(self, method, url, **kwargs):
+        path = httpx.URL(url).path
+        self.calls.append((method, path, kwargs.get("json")))
+        req = httpx.Request(method, url)
+        if path.endswith("_policy"):
+            kind = path.rsplit("/", 1)[1].removesuffix("_policy")
+            names = {"fulfillment": "USPS Media Mail", "payment": "Immediate payment managed via eBay",
+                     "return": "Returns allowed within 30 days"}
+            return httpx.Response(200, json={f"{kind}Policies": [{"name": names[kind], f"{kind}PolicyId": f"{kind}-1"}]}, request=req)
+        if path == "/sell/inventory/v1/location/home":
+            return httpx.Response(404 if method == "GET" else 204, request=req)
+        if path.startswith("/sell/inventory/v1/inventory_item/"):
+            return httpx.Response(204, request=req)
+        if path == "/sell/inventory/v1/offer" and method == "GET":
+            sku = kwargs["params"]["sku"]
+            if sku in self.offers:
+                return httpx.Response(200, json={"offers": [{"offerId": self.offers[sku]}]}, request=req)
+            return httpx.Response(404, json={"errors": [{"errorId": 25713}]}, request=req)
+        if path == "/sell/inventory/v1/offer" and method == "POST":
+            self.offers[kwargs["json"]["sku"]] = "offer-1"
+            return httpx.Response(201, json={"offerId": "offer-1"}, request=req)
+        if path == "/sell/inventory/v1/offer/offer-1":
+            return httpx.Response(204, request=req)
+        if path == "/sell/inventory/v1/offer/offer-1/publish":
+            return httpx.Response(200, json={"listingId": "1234567890"}, request=req)
+        raise AssertionError(f"unexpected {method} {path}")
+
+
+def test_publish_via_api(settings, monkeypatch):
+    fake = FakeEbay()
+    monkeypatch.setattr(httpx, "post", fake.post)
+    monkeypatch.setattr(httpx, "request", fake.request)
+    settings = replace(
+        settings,
+        seller=replace(settings.seller, shipping_profile="USPS Media Mail", payment_profile="Immediate payment managed via eBay",
+                       return_profile="Returns allowed within 30 days", ebay_refresh_token="refresh"),
+        pricing=replace(settings.pricing, ebay_client_id="id", ebay_client_secret="secret"),
+        listing=replace(settings.listing, best_offer_auto_accept=0.9, best_offer_minimum=0.75),
+    )
+    store = Store(settings.db_path)
+    item = store.create("BK")
+    item.photos = [Photo(idx=1, original="o.jpg", derived="d.jpg", url="https://photos.example.com/1.jpg")]
+    item.listing = pipeline.build_listing(Item(sku=item.sku, identification=IDENT, price=PRICE, description=DESC))
+    item.listing.price = 22
+    item.status = Status.APPROVED
+    store.save(item)
+
+    listed, problems = pipeline.publish_approved(settings, store)
+    assert problems == {} and listed == {item.sku: "1234567890"}
+    saved = store.get(item.sku)
+    assert saved.status == Status.LISTED and saved.ebay_listing_id == "1234567890"
+
+    sent = {(m, p): body for m, p, body in fake.calls}
+    inv = sent[("PUT", f"/sell/inventory/v1/inventory_item/{item.sku}")]
+    assert inv["condition"] == "USED_GOOD"  # IDENT condition 5000
+    assert inv["product"]["imageUrls"] == ["https://photos.example.com/1.jpg"]
+    assert inv["product"]["aspects"]["Author"] == ["William Shakespeare"]
+    assert "Not An Aspect" not in inv["product"]["aspects"]
+    offer = sent[("POST", "/sell/inventory/v1/offer")]
+    assert offer["pricingSummary"]["price"] == {"value": "22.00", "currency": "USD"}
+    assert offer["listingPolicies"]["fulfillmentPolicyId"] == "fulfillment-1"
+    assert offer["listingPolicies"]["bestOfferTerms"]["autoAcceptPrice"]["value"] == "19.80"
+    assert offer["categoryId"] == "261186" and offer["merchantLocationKey"] == "home"
+    assert sent[("POST", "/sell/inventory/v1/location/home")]["location"]["address"]["city"] == "Newfields"
+
+    # Publishing again revises the existing offer instead of creating a duplicate.
+    saved.status = Status.APPROVED
+    store.save(saved)
+    fake.calls.clear()
+    pipeline.publish_approved(settings, store)
+    assert ("PUT", "/sell/inventory/v1/offer/offer-1") in {(m, p) for m, p, _ in fake.calls}
+    assert ("POST", "/sell/inventory/v1/offer") not in {(m, p) for m, p, _ in fake.calls}
+
+
+def test_publish_reports_missing_policy(settings, monkeypatch):
+    fake = FakeEbay()
+    monkeypatch.setattr(httpx, "post", fake.post)
+    monkeypatch.setattr(httpx, "request", fake.request)
+    settings = replace(settings, seller=replace(settings.seller, shipping_profile="Nope", ebay_refresh_token="r"),
+                       pricing=replace(settings.pricing, ebay_client_id="id", ebay_client_secret="s"))
+    client = publish.EbaySell(settings)
+    with pytest.raises(publish.EbayError, match="No fulfillment policy named 'Nope'.*USPS Media Mail"):
+        client.policy_ids()
+
+
+def test_agent_mode_flow(settings, monkeypatch):
+    """A session saves identify/price/describe JSON; the result matches the API path."""
+    from lister import agent
+
+    monkeypatch.setattr(pricing, "active_comps", lambda s, i: [
+        Comp(source="ebay_active", title="Arden MND", price=13.0, shipping=4.0, url="https://www.ebay.com/itm/2"),
+    ])
+    store = Store(settings.db_path)
+    item = store.create("BK")
+    item.photos = [Photo(idx=1, original="o.jpg", derived="d.jpg", url="https://photos.example.com/1.jpg")]
+    item.notes = "All plates present."
+    item.status = Status.QUEUED
+    store.save(item)
+
+    claimed = store.claim_next()
+    assert agent.show(claimed)["photos"] == ["d.jpg"]
+    assert "All plates present." in agent.guide("price", claimed)
+    assert agent.schema("identify")["type"] == "object"
+
+    agent.save(claimed, "identify", IDENT.model_dump())
+    assert "Not An Aspect" not in [a.name for a in claimed.identification.aspects]
+    comps = agent.fetch_comps(settings, claimed)
+    assert comps[0]["index"] == 0 and comps[0]["price"] == 13.0
+    agent.save(claimed, "price", {**PRICE.model_dump(), "research_notes": "One SOLD at $11."})
+    problems = agent.save(claimed, "describe", DESC.model_dump())
+    store.save(claimed)
+
+    done = store.get(item.sku)
+    assert done.status == Status.REVIEW and problems == []
+    assert done.listing.price == 12.5 and done.listing.title.startswith("A Midsummer")
+    assert done.research_summary == "One SOLD at $11."
+    assert {c.source: c.relevance for c in done.comps} == {"ebay_sold": "strong", "ebay_active": "strong"}
+
+    agent.save(done, "listing", {"price": 295})
+    assert done.listing.price == 295 and done.listing.title.startswith("A Midsummer")
+    with pytest.raises(Exception):
+        agent.save(done, "price", {"list_price": "not a number"})
+
+
+def test_account_reprice_moves_best_offer(settings, monkeypatch):
+    from lister import account
+
+    sent = []
+
+    def fake_post(url, **kwargs):
+        if "oauth2/token" in url:
+            return httpx.Response(200, json={"access_token": "t", "expires_in": 7200}, request=httpx.Request("POST", url))
+        sent.append((kwargs["headers"]["X-EBAY-API-CALL-NAME"], kwargs["content"].decode()))
+        return httpx.Response(200, text="<Ack>Warning</Ack>", request=httpx.Request("POST", url))
+
+    monkeypatch.setattr(httpx, "post", fake_post)
+    settings = replace(settings, seller=replace(settings.seller, ebay_refresh_token="r"),
+                       pricing=replace(settings.pricing, ebay_client_id="id", ebay_client_secret="s"),
+                       listing=replace(settings.listing, best_offer_auto_accept=0.9, best_offer_minimum=0.75))
+    account.EbayAccount(settings).reprice("123", 22)
+    call, body = sent[0]
+    assert call == "ReviseFixedPriceItem"
+    assert "<StartPrice>22.00</StartPrice>" in body
+    assert "<BestOfferAutoAcceptPrice>19.80</BestOfferAutoAcceptPrice>" in body
+    assert "<MinimumBestOfferPrice>16.50</MinimumBestOfferPrice>" in body

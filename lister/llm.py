@@ -62,9 +62,16 @@ def parse(model: str, system: str, content: list[dict] | str, schema: type[T], e
     return response.parsed_output
 
 
-def research(model: str, system: str, prompt: str, max_searches: int = 8, effort: str = "medium") -> str:
-    """Free-text answer using Claude's web search tool. Returns the final text with source URLs."""
+def research(model: str, system: str, prompt: str, max_searches: int = 8, max_fetches: int = 0,
+             effort: str = "medium") -> str:
+    """Free-text answer using Claude's web search (and optionally web fetch) tools.
+
+    Returns the final text with source URLs. Fetch lets the model read dealer search-result
+    pages (e.g. AbeBooks filtered by year), which carry far more prices than search snippets.
+    """
     tools = [{"type": "web_search_20260209", "name": "web_search", "max_uses": max_searches}]
+    if max_fetches:
+        tools.append({"type": "web_fetch_20260209", "name": "web_fetch", "max_uses": max_fetches})
     messages: list[dict] = [{"role": "user", "content": prompt}]
     for _ in range(5):  # resume server-tool loops that pause
         response = client().beta.messages.create(

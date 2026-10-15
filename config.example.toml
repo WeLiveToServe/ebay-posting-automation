@@ -2,10 +2,15 @@
 
 [seller]
 location = "Newfields, NH"
+postal_code = "03856"
+# Your eBay user ID; your own listings are left out of the price comparables.
+ebay_username = ""
 # Business policy names exactly as they appear in eBay Seller Hub.
 shipping_profile = "USPS Media Mail"
 return_profile = "Returns allowed within 30 days"
 payment_profile = "Immediate payment managed via eBay"
+# Inventory location created on first API publish (`python -m lister publish`).
+merchant_location_key = "home"
 
 [listing]
 default_category = "books"     # key from lister/categories.py
@@ -40,6 +45,11 @@ describe = "claude-opus-5-5"
 sources = ["ebay_active", "web_research"]
 ebay_marketplace = "EBAY_US"
 max_active_comps = 40
+
+[pipeline]
+# "api": the background worker calls the Anthropic API (needs API credit).
+# "agent": a Claude Code or Codex session does identify/price/describe (see AGENTS.md).
+llm = "api"
 
 [server]
 host = "0.0.0.0"
