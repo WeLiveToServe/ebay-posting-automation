@@ -143,6 +143,16 @@ def test_title_drops_parts_in_order_and_never_exceeds_80():
     assert len(assemble.build_title(huge, True)) <= 80
 
 
+def test_title_marks_sets():
+    newer = EditionResult.model_validate(edition_data(year=2021, volumes=6, title="Thrawn Series", author="Timothy Zahn"))
+    assert assemble.build_title(newer, False) == "Timothy Zahn Thrawn Series Set of 6"
+
+
+def test_title_skips_placeholder_author():
+    anthology = EditionResult.model_validate(edition_data(author="Various", edition_short=None, title="Persian Literature"))
+    assert assemble.build_title(anthology, True) == "1919 A. & C. Black Ltd. Persian Literature"
+
+
 def test_compact_publisher():
     assert assemble.compact_publisher("A. & C. Black Ltd.") == "A. & C. Black"
     assert assemble.compact_publisher("Grosset & Dunlap Publishers") == "Grosset & Dunlap"

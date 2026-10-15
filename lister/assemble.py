@@ -15,6 +15,7 @@ from .models import Assembled, Item
 from .crew import ConditionResult, DescriptionResult, EditionResult, PhotoLabel, PricingResult
 
 MAX_TITLE = 80
+PLACEHOLDER_AUTHORS = {"various", "anonymous", "anon.", "unknown"}
 
 # --- Title -------------------------------------------------------------------------
 
@@ -38,12 +39,15 @@ def build_title(edition: EditionResult, older: bool) -> str:
 
     Older books: year + edition + publisher, then author, then title.
     Newer books: author, then title.
+    Multi-volume sets end with "Set of N".
     When too long, drop in this order: subtitle, publisher noise, publisher, edition, then cut
-    the title at a word boundary. Author and title are never dropped.
+    the title at a word boundary. Author, title and the set count are never dropped.
     """
     title = edition.title.strip()
     full_title = f"{title}: {edition.subtitle.strip()}" if edition.subtitle else title
     author = edition.author.strip()
+    if author.lower() in PLACEHOLDER_AUTHORS:  # an anthology: the title carries it
+        author = ""
     if not older:
         candidates = [[author, full_title], [author, title]]
     else:
@@ -58,6 +62,9 @@ def build_title(edition: EditionResult, older: bool) -> str:
             [str(edition.year), edition.edition_short, author, title],
             [str(edition.year), author, title],
         ]
+    if edition.volumes > 1:  # a set says so; that fact outranks the publisher and edition
+        suffix = f"Set of {edition.volumes}"
+        candidates = [c + [suffix] for c in candidates] + [[author, title, suffix]]
     for parts in candidates:
         text = _fit(parts)
         if len(text) <= MAX_TITLE:
