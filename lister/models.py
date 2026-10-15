@@ -129,6 +129,49 @@ class ListingFields(BaseModel):
     description_html: str = ""
 
 
+# --- Multi-agent run state (see lister/crew.py) ----------------------------------
+
+ROLE_ORDER = ("edition", "condition", "pricing", "description")
+
+
+class Attempt(BaseModel):
+    output: dict
+    saved_at: str = Field(default_factory=utcnow)
+    corrections: list[str] = Field(default_factory=list, description="Corrections in force when this was produced.")
+
+
+class RoleState(BaseModel):
+    attempts: list[Attempt] = Field(default_factory=list)
+    corrections: list[str] = Field(default_factory=list)
+    stale: bool = False  # an earlier stage changed after this result was saved
+
+    @property
+    def latest(self) -> dict | None:
+        return self.attempts[-1].output if self.attempts else None
+
+
+class Assembled(BaseModel):
+    category: str
+    title: str
+    price: float
+    condition_id: str
+    grade: str
+    isbn: str = ""
+    aspects: dict[str, str] = Field(default_factory=dict)
+    description_html: str
+    photo_order: list[int]
+    problems: list[str] = Field(default_factory=list)  # "role: message", blocking
+    questions: list[str] = Field(default_factory=list)
+    assembled_at: str = Field(default_factory=utcnow)
+
+
+class CrewRun(BaseModel):
+    started_at: str = Field(default_factory=utcnow)
+    roles: dict[str, RoleState] = Field(default_factory=lambda: {r: RoleState() for r in ROLE_ORDER})
+    assembled: Assembled | None = None
+    signed_off_at: str = ""
+
+
 class Item(BaseModel):
     sku: str
     status: Status = Status.CAPTURING
@@ -147,3 +190,4 @@ class Item(BaseModel):
     error: str = ""
     exported_file: str = ""
     ebay_listing_id: str = ""
+    crew: CrewRun | None = None  # multi-agent run (agent mode)

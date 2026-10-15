@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Listing Preview</title>
+<style>
+:root {
+  --bg: #f6f4ef; --card: #ffffff; --ink: #1d1b18; --muted: #6b665d; --line: #e2ddd2;
+  --accent: #7a3e12; --accent-ink: #ffffff; --warn-bg: #fff4dc; --warn-ink: #6d4a00;
+  --bad-bg: #fde8e6; --bad-ink: #8a1c12; --chip: #efe9de;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #171614; --card: #211f1c; --ink: #ece8e1; --muted: #a39d92; --line: #36332e;
+    --accent: #e09a5f; --accent-ink: #1b1209; --warn-bg: #3a2e12; --warn-ink: #f3d68f;
+    --bad-bg: #3d1a17; --bad-ink: #f4aaa1; --chip: #2d2a26;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #171614; --card: #211f1c; --ink: #ece8e1; --muted: #a39d92; --line: #36332e;
+  --accent: #e09a5f; --accent-ink: #1b1209; --warn-bg: #3a2e12; --warn-ink: #f3d68f;
+  --bad-bg: #3d1a17; --bad-ink: #f4aaa1; --chip: #2d2a26;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink);
+  font: 16px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+header.bar { position: sticky; top: 0; z-index: 5; display: flex; align-items: center; gap: 12px;
+  padding: 10px 16px; background: var(--card); border-bottom: 1px solid var(--line); }
+header.bar h2 { margin: 0; font-size: 15px; font-weight: 600; color: var(--muted);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#menu-btn { flex: none; width: 40px; height: 40px; border: 1px solid var(--line); border-radius: 8px;
+  background: var(--card); color: var(--ink); font-size: 20px; cursor: pointer; }
+nav#menu { position: fixed; inset: 0 auto 0 0; width: min(360px, 88vw); z-index: 10; overflow-y: auto;
+  background: var(--card); border-right: 1px solid var(--line); padding: 12px 0 40px;
+  transform: translateX(-100%); transition: transform .18s ease; }
+nav#menu.open { transform: none; box-shadow: 0 0 40px rgba(0,0,0,.25); }
+nav#menu h3 { margin: 16px 16px 6px; font-size: 12px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+nav#menu a { display: block; padding: 9px 16px; color: var(--ink); text-decoration: none; font-size: 14px;
+  border-left: 3px solid transparent; }
+nav#menu a:hover, nav#menu a.current { background: var(--chip); border-left-color: var(--accent); }
+nav#menu .meta { display: block; font-size: 12px; color: var(--muted); }
+#scrim { position: fixed; inset: 0; z-index: 9; background: rgba(0,0,0,.35); display: none; }
+#scrim.open { display: block; }
+main { max-width: 860px; margin: 0 auto; padding: 16px; }
+.js article.listing { display: none; }
+.js article.listing.shown { display: block; }
+article.listing { background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+  padding: 20px; margin-bottom: 24px; }
+article h1 { margin: 0 0 6px; font-size: 22px; line-height: 1.3; }
+.sub { color: var(--muted); font-size: 14px; margin-bottom: 14px; }
+.sub a { color: var(--accent); }
+.badge { display: inline-block; padding: 1px 8px; border-radius: 999px; background: var(--chip); font-size: 12px;
+  margin-right: 6px; }
+.badge.live { background: var(--accent); color: var(--accent-ink); }
+section { border-top: 1px solid var(--line); padding: 14px 0 4px; }
+section h4 { margin: 0 0 8px; font-size: 13px; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); }
+dl { display: grid; grid-template-columns: max-content 1fr; gap: 4px 14px; margin: 0; }
+dt { color: var(--muted); font-size: 14px; }
+dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+.grade { font-weight: 700; font-size: 18px; }
+.box { border-radius: 8px; padding: 10px 14px; margin: 0 0 14px; font-size: 14px; }
+.box.warn { background: var(--warn-bg); color: var(--warn-ink); }
+.box.bad { background: var(--bad-bg); color: var(--bad-ink); }
+.box ul { margin: 4px 0 0; padding-left: 20px; }
+.price { font-size: 26px; font-weight: 700; }
+.range { color: var(--muted); }
+.table-wrap { overflow-x: auto; margin-top: 10px; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { color: var(--muted); font-weight: 600; }
+td a { color: var(--accent); }
+.desc p, .desc ul { margin: 0 0 10px; }
+iframe.live-desc { width: 100%; height: 360px; border: 1px solid var(--line); border-radius: 8px; background: #fff; }
+details.photos summary { cursor: pointer; font-weight: 600; padding: 6px 0; }
+.gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; margin-top: 10px; }
+.gallery figure { margin: 0; }
+.gallery img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 6px; border: 1px solid var(--line); }
+.gallery figcaption { font-size: 12px; color: var(--muted); }
+.empty { color: var(--muted); padding: 40px 0; text-align: center; }
+@media (max-width: 520px) {
+  article.listing { padding: 16px; }
+  dl { grid-template-columns: 1fr; gap: 0; }
+  dd { margin-bottom: 6px; }
+}
+</style>
+</head>
+<body>
+<script>document.documentElement.classList.add("js")</script>
+<header class="bar">
+  <button id="menu-btn" aria-label="Listings menu" aria-expanded="false" aria-controls="menu">&#9776;</button>
+  <h2 id="current-title">{{ entries|length }} listings</h2>
+</header>
+<div id="scrim"></div>
+<nav id="menu" aria-label="Listings">
+  <h3>New runs ({{ runs|length }})</h3>
+  {% for e in runs %}<a href="#{{ e.key }}" data-key="{{ e.key }}">{{ e.menu }}<span class="meta">{{ e.sku }} · {% if e.price.suggested %}${{ '%.2f'|format(e.price.suggested) }}{% endif %}{% if e.questions %} · {{ e.questions|length }} open question{{ 's' if e.questions|length != 1 }}{% endif %}</span></a>
+  {% else %}<p class="sub" style="margin:0 16px">No runs yet.</p>{% endfor %}
+  <h3>Live on eBay ({{ live|length }}){% if live_taken %} · {{ live_taken }}{% endif %}</h3>
+  {% for e in live %}<a href="#{{ e.key }}" data-key="{{ e.key }}">{{ e.menu }}<span class="meta">${{ '%.2f'|format(e.price.suggested) }} · read-only snapshot</span></a>
+  {% else %}<p class="sub" style="margin:0 16px">No snapshot. Run <code>python -m lister run snapshot</code>.</p>{% endfor %}
+</nav>
+<main>
+{% for e in entries %}
+<article class="listing" id="{{ e.key }}" data-title="{{ e.title }}">
+  <h1>{{ e.title }}</h1>
+  <div class="sub">
+    {% if e.kind == 'live' %}<span class="badge live">Live</span>{% else %}<span class="badge">Run</span>{% endif %}
+    {% if e.sku %}{{ e.sku }} · {% endif %}{{ e.status }}{% if e.category %} · {{ e.category }}{% endif %}
+    {% if e.ebay_url %} · <a href="{{ e.ebay_url }}" target="_blank" rel="noopener">eBay listing</a>{% endif %}
+    {% if e.title|length %} · {{ e.title|length }}/80 chars{% endif %}
+  </div>
+  {% if e.problems %}<div class="box bad"><b>Problems to fix before sign-off</b><ul>{% for p in e.problems %}<li>{{ p }}</li>{% endfor %}</ul></div>{% endif %}
+  {% if e.questions %}<div class="box warn"><b>Open questions for you</b><ul>{% for q in e.questions %}<li>{{ q }}</li>{% endfor %}</ul></div>{% endif %}
+
+  <section><h4>Edition</h4>
+    {% if e.edition_rows %}<dl>{% for k, v in e.edition_rows %}<dt>{{ k }}</dt><dd>{{ v }}</dd>{% endfor %}</dl>
+    {% else %}<p class="sub">No item specifics.</p>{% endif %}
+    {% if e.age is defined %}<p class="sub" style="margin:8px 0 0">{{ e.age }} years old · {{ 'older' if e.older else 'newer' }} book</p>{% endif %}
+  </section>
+
+  <section><h4>Condition</h4>
+    {% if e.grade %}<div class="grade">{{ e.grade }}</div>{% endif %}
+    {% if e.condition_text %}<p>{{ e.condition_text }}</p>{% endif %}
+    {% if e.ebay_condition %}<p class="sub">eBay condition field: {{ e.ebay_condition }}</p>{% endif %}
+  </section>
+
+  <section><h4>Description</h4>
+    {% if e.kind == 'live' %}<iframe class="live-desc" sandbox title="Live description" srcdoc="{{ e.live_description }}"></iframe>
+    {% else %}<div class="desc">{{ e.description_html|safe }}</div>{% endif %}
+  </section>
+
+  <section><h4>Price</h4>
+    <div class="price">${{ '%.2f'|format(e.price.suggested) }}{% if e.price.provisional %} <span class="badge">provisional</span>{% endif %}</div>
+    {% if e.price.low is defined %}<div class="range">Range ${{ '%.2f'|format(e.price.low) }} – ${{ '%.2f'|format(e.price.high) }} · {{ e.price.confidence }} confidence</div>
+    <p>{{ e.price.reason }}</p>
+    <p class="sub">eBay history: {{ e.price.ebay_history }}</p>{% endif %}
+    {% if e.comps %}<div class="table-wrap"><table>
+      <thead><tr><th>Price</th><th>Status</th><th>Match</th><th>Edition · condition</th><th>Source</th></tr></thead>
+      <tbody>{% for c in e.comps %}<tr>
+        <td>${{ '%.2f'|format(c.price) }}{% if c.shipping %} +{{ '%.2f'|format(c.shipping) }}{% endif %}</td>
+        <td>{{ c.status }}{% if c.date %}<br><span class="sub">{{ c.date }}</span>{% endif %}</td>
+        <td>{{ c.match }}</td>
+        <td>{{ c.edition }} · {{ c.condition }}{% if c.note %}<br><span class="sub">{{ c.note }}</span>{% endif %}</td>
+        <td><a href="{{ c.url }}" target="_blank" rel="noopener">{{ c.source.replace('_', ' ') }}</a></td>
+      </tr>{% endfor %}</tbody></table></div>{% endif %}
+  </section>
+
+  <section><details class="photos"><summary>Photos ({{ e.photos|length }}, in listing order)</summary>
+    <div class="gallery">{% for p in e.photos %}<figure><a href="{{ p.src }}" target="_blank" rel="noopener"><img src="{{ p.src }}" alt="Photo {{ loop.index }}" loading="lazy"></a><figcaption>{{ loop.index }}. {{ p.caption }}</figcaption></figure>{% endfor %}</div>
+  </details></section>
+</article>
+{% else %}
+<p class="empty">Nothing to preview yet.</p>
+{% endfor %}
+</main>
+<script>
+(function () {
+  var menu = document.getElementById("menu"), scrim = document.getElementById("scrim"),
+      btn = document.getElementById("menu-btn"), heading = document.getElementById("current-title"),
+      articles = Array.prototype.slice.call(document.querySelectorAll("article.listing")),
+      links = Array.prototype.slice.call(menu.querySelectorAll("a[data-key]"));
+  function toggle(open) {
+    menu.classList.toggle("open", open); scrim.classList.toggle("open", open);
+    btn.setAttribute("aria-expanded", open ? "true" : "false");
+  }
+  function show() {
+    if (!articles.length) return;
+    var key = decodeURIComponent(location.hash.slice(1));
+    var target = articles.filter(function (a) { return a.id === key; })[0] || articles[0];
+    articles.forEach(function (a) { a.classList.toggle("shown", a === target); });
+    links.forEach(function (l) { l.classList.toggle("current", l.dataset.key === target.id); });
+    heading.textContent = (articles.indexOf(target) + 1) + " / " + articles.length + " · " + target.dataset.title;
+    window.scrollTo(0, 0);
+  }
+  btn.addEventListener("click", function () { toggle(!menu.classList.contains("open")); });
+  scrim.addEventListener("click", function () { toggle(false); });
+  links.forEach(function (l) { l.addEventListener("click", function () { toggle(false); }); });
+  document.addEventListener("keydown", function (ev) { if (ev.key === "Escape") toggle(false); });
+  window.addEventListener("hashchange", show);
+  show();
+})();
+</script>
+</body>
+</html>

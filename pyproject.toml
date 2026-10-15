@@ -30,7 +30,7 @@ build-backend = "setuptools.build_meta"
 include = ["lister*"]
 
 [tool.setuptools.package-data]
-lister = ["web/templates/*.html", "web/static/*"]
+lister = ["web/templates/*.html", "web/static/*", "roles/*.md", "templates/*.html"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

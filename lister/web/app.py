@@ -13,7 +13,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Redirect
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from .. import categories, export, photos, pipeline, pricing
+from .. import categories, export, photos, pipeline, preview, pricing
 from ..config import Settings, load_settings
 from ..models import Item, Status
 from ..store import Store
@@ -39,6 +39,8 @@ def create_app(settings: Settings | None = None, start_worker: bool = True) -> F
 
     app = FastAPI(title="Lister", lifespan=lifespan)
     app.mount("/static", StaticFiles(directory=HERE / "static"), name="static")
+    # Photos referenced by the preview (data/previews/listings.html uses ../derived/...).
+    app.mount("/derived", StaticFiles(directory=settings.derived_dir, check_dir=False), name="derived")
     templates = Jinja2Templates(directory=HERE / "templates")
     templates.env.globals.update(categories=categories.CATEGORIES, Status=Status)
 
@@ -198,6 +200,11 @@ def create_app(settings: Settings | None = None, start_worker: bool = True) -> F
         parts = [f"Listed {len(listed)} on eBay" if listed else "Nothing listed"]
         parts += [f"{sku}: {'; '.join(errs)}" for sku, errs in problems.items()]
         return home(" | ".join(parts))
+
+    @app.get("/preview", response_class=HTMLResponse)
+    def preview_page():
+        """The multi-agent preview, rebuilt on each request (live listings come from the cached snapshot)."""
+        return HTMLResponse(preview.build(settings, store).read_text(encoding="utf-8"))
 
     @app.get("/exports/{name}")
     def download(name: str):

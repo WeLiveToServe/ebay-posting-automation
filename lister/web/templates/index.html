@@ -4,6 +4,7 @@
 {% endblock %}
 {% block body %}
 {% if msg %}<p class="flash">{{ msg }}</p>{% endif %}
+<p class="hint"><a href="/preview">Listing preview</a>: multi-agent runs and your live eBay listings.</p>
 {% if not r2_ready %}<p class="flash warn">R2 is not configured; photos stay local and export will be blocked until they have public URLs.</p>{% endif %}
 
 {% set order = [Status.REVIEW, Status.ERROR, Status.QUEUED, Status.PROCESSING, Status.CAPTURING, Status.APPROVED, Status.LISTED, Status.EXPORTED] %}
@@ -13,7 +14,7 @@
   <section>
     <h2>{{ status.value|capitalize }} <span class="count">{{ items|length }}</span></h2>
     {% if status == Status.QUEUED and agent_mode %}
-      <p class="hint">Waiting for an agent session. In the repo folder run <code>claude</code> or <code>codex</code> and say "process the queue".</p>
+      <p class="hint">Waiting for an agent session. In the repo folder run <code>claude</code> or <code>codex</code> and say "run the multi-agent listing on the queue".</p>
     {% endif %}
     <ul class="cards">
       {% for item in items %}

@@ -50,6 +50,53 @@ Identify, price and describe can run in either of two modes. Choose with `[pipel
 - **`api`: the background worker calls the Anthropic API.** Items are processed as soon as
   you queue them. This mode needs `ANTHROPIC_API_KEY` with credit.
 
+### Multi-agent listing runs (agent mode)
+
+In agent mode the session acts as an **orchestrator** and hands each book to a team of role
+agents:
+
+```
+edition ─► condition ─► pricing ┐
+                     └► description ┴─► assembly (code) ─► preview ─► your review
+```
+
+The parts of a run:
+- **Roles:**
+  - Each role has a fixed system prompt in `lister/roles/` and a JSON schema in `lister/crew.py`.
+  - Each has a recommended model: Opus for edition and pricing, Sonnet for condition and
+    description.
+  - Claude Code agent definitions are in `.claude/agents/`; Codex ones are in `.codex/agents/`.
+- **Code checks:** code enforces the rules that must hold whichever model ran the role:
+  - the condition grade for the book's age (40 or more years is "older");
+  - the title format;
+  - the photo order;
+  - the required price sources;
+  - eBay's required fields.
+- **Quality check:** the orchestrator checks the result against `lister/roles/checklist.md` and
+  sends corrections back to the agent responsible.
+- **Questions:** questions for you never stop the run. They are collected in the preview.
+
+To start a run:
+- **Claude Code:**
+  1. Run `claude` in this folder. Run `claude --chrome` instead if the pricing agent should use
+     Terapeak in your logged-in browser.
+  2. Say "run the multi-agent listing on the queue".
+- **Codex:**
+  1. Run `codex` in this folder.
+  2. Say the same thing.
+  3. For the edition and pricing agents, set `model` in `.codex/agents/*.toml` to your strongest
+     model.
+
+Either way, the session follows [AGENTS.md](AGENTS.md) (Workflow A).
+
+**Preview:**
+- **Where:** `data/previews/listings.html`, rebuilt after every run. While `lister serve` is
+  running it is also at `/preview`.
+- **Each listing shows:** title, open questions, edition, condition, description, price with
+  linked comps, then photos in listing order.
+- **Menu:** a hamburger menu switches between new runs and a read-only snapshot of your live
+  eBay listings. Refresh the snapshot with `python -m lister run snapshot`.
+
 Live listings, including ones made in Seller Hub, are managed with `python -m lister ebay ...`:
 
 | Command | What it does |
@@ -134,6 +181,11 @@ dedicated sold-comps provider, write a source in `lister/pricing.py` that return
 | `lister/pipeline.py` | step runner, background worker, export |
 | `lister/photos.py` | photo normalization and R2 publishing |
 | `lister/web/` | FastAPI and Jinja UI (capture, review, export) |
+| `lister/crew.py` | multi-agent runs: role schemas, age and grade rules, briefs, corrections |
+| `lister/assemble.py` | assembly: title, photo order, description HTML, checks |
+| `lister/preview.py`, `lister/templates/` | the HTML preview and the live-listing snapshot |
+| `lister/roles/` | fixed role prompts and the orchestrator checklist |
+| `.claude/agents/`, `.codex/agents/` | role agent definitions (model, effort) |
 | `legacy/` | the v1 scripts and workbooks, kept for reference |
 
 ## Tests

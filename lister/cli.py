@@ -9,7 +9,9 @@ import socket
 import sys
 from pathlib import Path
 
-from . import account, agent, export, photos, pipeline, publish
+from pydantic import ValidationError
+
+from . import account, agent, assemble, crew, export, photos, pipeline, preview, publish
 from .config import load_settings
 from .models import Status
 from .store import Store
@@ -155,6 +157,117 @@ def cmd_ebay(args, settings, store) -> None:
         print(f"{args.item_id}: now managed as {item.sku} ({len(item.photos)} photos imported)")
 
 
+def _run_dir(settings, sku: str) -> Path:
+    path = settings.data_dir / "runs" / sku
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def cmd_run(args, settings, store) -> None:
+    """Multi-agent listing runs, driven by an orchestrator session (see AGENTS.md)."""
+    if args.action == "roles":
+        print(agent.dumps({name: {"claude_model": r.claude, "effort": r.effort, "codex": r.codex,
+                                  "receives": list(r.needs), "prompt": f"lister/roles/{name}.md"}
+                           for name, r in crew.ROLES.items()}))
+        return
+    if args.action == "preview":
+        print(preview.build(settings, store))
+        return
+    if args.action == "snapshot":  # read-only eBay calls
+        rows = preview.snapshot_live(settings)
+        print(f"{len(rows)} live listings saved to {preview.live_path(settings)}")
+        print(preview.build(settings, store))
+        return
+    if args.action == "start":
+        item = _item(store, args.sku) if args.sku else store.claim_next()
+        if item is None:
+            print(agent.dumps({"sku": None, "message": "queue is empty"}))
+            return
+        if item.crew is None or args.restart:
+            item.crew = crew.CrewRun()
+        store.save(item)
+        folder = _run_dir(settings, item.sku)
+        print(agent.dumps({
+            "sku": item.sku, "status": item.status.value, "notes": item.notes,
+            "photos": [{"idx": p.idx, "path": p.derived} for p in item.photos],
+            "stages": [
+                {"stage": 1, "roles": ["edition"]}, {"stage": 2, "roles": ["condition"]},
+                {"stage": 3, "roles": ["pricing", "description"], "parallel": True},
+                {"stage": 4, "code": f"run assemble {item.sku}"},
+            ],
+            "files": {r: {"brief": str(folder / f"{r}.brief.md"), "output": str(folder / f"{r}.json")}
+                      for r in crew.ORDER},
+            "done": {r: bool(s.latest) for r, s in item.crew.roles.items()},
+        }))
+        return
+
+    item = _item(store, args.sku)
+    folder = _run_dir(settings, item.sku)
+    if args.action == "brief":
+        path = folder / f"{args.role}.brief.md"
+        try:
+            path.write_text(crew.brief(item, args.role, folder / f"{args.role}.json",
+                                       settings.seller.ebay_username), encoding="utf-8")
+        except ValueError as exc:
+            raise SystemExit(str(exc))
+        print(path)
+    elif args.action == "save":
+        path = Path(args.file) if args.file else folder / f"{args.role}.json"
+        try:
+            problems = crew.save(item, args.role, crew.load_json(path))
+        except ValidationError as exc:
+            print(agent.dumps({"saved": False, "schema_errors": crew.schema_errors(exc)}))
+            raise SystemExit(1)
+        except ValueError as exc:
+            raise SystemExit(str(exc))
+        store.save(item)
+        stale = [r for r, s in item.crew.roles.items() if s.stale]
+        print(agent.dumps({"saved": True, "role": args.role, "attempt": len(item.crew.roles[args.role].attempts),
+                           "problems": problems, "stale": stale}))
+    elif args.action == "correct":
+        crew.correct(item, args.role, args.text)
+        store.save(item)
+        print(f"Correction {len(item.crew.roles[args.role].corrections)} recorded for {args.role}. "
+              f"Re-brief with `run brief {item.sku} {args.role}` (or message the live agent).")
+    elif args.action == "assemble":
+        try:
+            listing = assemble.assemble(item)
+        except ValueError as exc:
+            raise SystemExit(str(exc))
+        store.save(item)
+        out = preview.build(settings, store)
+        print(agent.dumps({**listing.model_dump(exclude={"description_html"}), "preview": str(out)}))
+    elif args.action == "signoff":
+        listing = item.crew.assembled if item.crew else None
+        if listing is None:
+            raise SystemExit(f"Run `run assemble {item.sku}` first")
+        if listing.problems:
+            raise SystemExit("Not signed off; fix these first:\n- " + "\n- ".join(listing.problems))
+        item.crew.signed_off_at = crew.utcnow()
+        if item.status in (Status.LISTED, Status.EXPORTED):
+            note = ("Item is live; its listing fields were NOT changed. Applying this draft to the live "
+                    "listing needs the user's explicit instruction.")
+        else:
+            assemble.apply(item)
+            item.status = Status.REVIEW
+            note = "Listing fields updated; status review. Publishing needs the user's explicit instruction."
+        store.save(item)
+        print(f"{item.sku} signed off. {note}\nPreview: {preview.build(settings, store)}")
+    elif args.action == "status":
+        run = item.crew
+        if run is None:
+            raise SystemExit(f"{item.sku} has no run; `run start {item.sku}`")
+        print(agent.dumps({
+            "sku": item.sku,
+            "roles": {r: {"attempts": len(s.attempts), "corrections": s.corrections, "stale": s.stale}
+                      for r, s in run.roles.items()},
+            "assembled": bool(run.assembled),
+            "problems": run.assembled.problems if run.assembled else [],
+            "questions": run.assembled.questions if run.assembled else [],
+            "signed_off_at": run.signed_off_at,
+        }))
+
+
 def cmd_list(args, settings, store) -> None:
     for item in store.list(*(Status(s) for s in args.status)):
         price = f"${item.listing.price:.2f}" if item.listing.price else ""
@@ -225,6 +338,33 @@ def main(argv: list[str] | None = None) -> None:
     a = act.add_parser("adopt", help="Bring a Seller Hub/CSV listing under app control")
     a.add_argument("item_id")
     p.set_defaults(func=cmd_ebay)
+
+    p = sub.add_parser("run", help="Multi-agent listing runs for an orchestrator session (see AGENTS.md)")
+    act = p.add_subparsers(dest="action", required=True)
+    act.add_parser("roles", help="Roles with recommended Claude / Codex models and effort")
+    a = act.add_parser("start", help="Start (or resume) a run on SKU, or on the next queued item")
+    a.add_argument("sku", nargs="?")
+    a.add_argument("--restart", action="store_true", help="Discard earlier role results")
+    a = act.add_parser("brief", help="Write a role agent's complete brief; prints its path")
+    a.add_argument("sku")
+    a.add_argument("role", choices=list(crew.ORDER))
+    a = act.add_parser("save", help="Validate and store a role's JSON output")
+    a.add_argument("sku")
+    a.add_argument("role", choices=list(crew.ORDER))
+    a.add_argument("file", nargs="?", help="Defaults to data/runs/SKU/ROLE.json")
+    a = act.add_parser("correct", help="Record an orchestrator correction for a role")
+    a.add_argument("sku")
+    a.add_argument("role", choices=list(crew.ORDER))
+    a.add_argument("text")
+    a = act.add_parser("assemble", help="Build and check the listing; rebuilds the preview")
+    a.add_argument("sku")
+    a = act.add_parser("signoff", help="Orchestrator approval of a complete, problem-free listing")
+    a.add_argument("sku")
+    a = act.add_parser("status", help="Attempts, corrections, staleness, problems and questions")
+    a.add_argument("sku")
+    act.add_parser("preview", help="Rebuild data/previews/listings.html")
+    act.add_parser("snapshot", help="Refresh the read-only snapshot of live eBay listings, then the preview")
+    p.set_defaults(func=cmd_run)
 
     p = sub.add_parser("list", help="List items")
     p.add_argument("status", nargs="*", choices=[s.value for s in Status])
