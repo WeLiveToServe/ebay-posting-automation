@@ -67,7 +67,10 @@ mistake still knows its earlier work.
   Send corrections to the same agent with SendMessage; it keeps its context. Agent files are
   read when a session starts. If `book-*` isn't offered, start `general-purpose` instead, with
   the role's `model` and `effort` from the table and the body of `.claude/agents/book-<role>.md`
-  as its prompt.
+  as its prompt. A general-purpose agent can still run shell commands, which the `book-*`
+  definitions block. So add "Do not use Bash or PowerShell" to its prompt, and check its reply
+  for any command it ran. (In the first runs, a fallback pricing agent queried eBay's API
+  directly. It was read-only, but against the rules.)
 - **Codex:** use the project agents in `.codex/agents/` (`book_edition`, `book_condition`,
   `book_pricing`, `book_description`). Ask Codex to spawn the named agent with the brief path,
   and send corrections to that thread (`send_input`). The files set `model_reasoning_effort`.
