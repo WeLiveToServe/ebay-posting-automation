@@ -80,6 +80,17 @@ class Pipeline:
 
 
 @dataclass(frozen=True)
+class Orchestrator:
+    # `lister drive`: which CLI runs the role agents ("claude" or "codex"), and per-role
+    # settings: {role: {"claude": model, "codex": model, "effort": level, "chrome": bool}}.
+    engine: str = "claude"
+    evaluator_engine: str = "codex"  # a different vendor checks the generator's work
+    max_rounds: int = 3
+    timeout_s: int = 1800
+    roles: dict = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
 class Server:
     host: str = "0.0.0.0"
     port: int = 8765
@@ -97,6 +108,7 @@ class Settings:
     pricing: Pricing = field(default_factory=Pricing)
     pipeline: Pipeline = field(default_factory=Pipeline)
     server: Server = field(default_factory=Server)
+    orchestrator: Orchestrator = field(default_factory=Orchestrator)
 
     @property
     def db_path(self) -> Path:
@@ -161,4 +173,5 @@ def load_settings(config_path: Path | None = None, data_dir: Path | None = None)
         ),
         pipeline=_section(raw, "pipeline", Pipeline),
         server=_section(raw, "server", Server, access_token=env("LISTER_ACCESS_TOKEN", "")),
+        orchestrator=_section(raw, "orchestrator", Orchestrator),
     )

@@ -12,6 +12,7 @@ import os
 from datetime import datetime
 from pathlib import Path
 
+from pydantic import ValidationError
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from . import assemble, categories, crew
@@ -33,6 +34,9 @@ def live_path(settings: Settings) -> Path:
 
 def _src(path: str, base: Path) -> str:
     """Photo path relative to the preview file, so it works opened from disk and at /preview."""
+    parts = path.replace("\\", "/").split("/")
+    if not Path(path).exists() and len(parts) >= 3 and parts[-3] == "derived":
+        path = str(base.parent / "derived" / parts[-2] / parts[-1])  # stored on another machine (e.g. Windows)
     try:
         return Path(os.path.relpath(path, base)).as_posix()
     except ValueError:  # another drive on Windows
@@ -65,12 +69,12 @@ def run_entry(item: Item, base: Path) -> dict | None:
         "status": "signed off" if run.signed_off_at else "awaiting orchestrator sign-off",
         "ebay_url": f"https://www.ebay.com/itm/{item.ebay_listing_id}" if item.ebay_listing_id else "",
         "age": crew.age(edition.year),
-        "older": crew.is_older(edition.year),
+        "older": crew.collector(item, edition),
         "edition_rows": assemble.edition_facts(edition),
         "category": categories.get(listing.category).name,
         "grade": condition.grade,
         "ebay_condition": CONDITION_NAMES.get(listing.condition_id, ""),
-        "condition_text": condition.summary,
+        "condition_text": crew.condition_text(condition),
         "description_html": listing.description_html,
         "price": {"suggested": pricing.suggested, "low": pricing.low, "high": pricing.high,
                   "provisional": pricing.provisional, "confidence": pricing.confidence, "reason": pricing.reason,
@@ -79,7 +83,36 @@ def run_entry(item: Item, base: Path) -> dict | None:
         "questions": listing.questions,
         "problems": listing.problems,
         "photos": photos,
+        "specifics": list(listing.aspects.items()),
+        "condition_areas": [a.model_dump() for a in condition.areas if a.notable],
+        "answers": [a.model_dump() for a in run.answers],
+        "review_url": f"/review/{item.sku}",
     }
+
+
+YES_NO = ("is ", "are ", "does ", "do ", "has ", "have ", "can ", "was ", "were ", "did ", "should ", "will ")
+
+
+def question_fields(questions: list[str]) -> list[dict]:
+    """Form fields for open questions: yes/no ones get choices, the rest a text box."""
+    out = []
+    for n, q in enumerate(questions):
+        role = crew.question_role(q)
+        body = q.split(": ", 1)[1] if ": " in q else q
+        out.append({"n": n, "question": q, "role": role, "text": body,
+                    "check": "contrary evidence" in q.split(":", 1)[0],
+                    "yes_no": body.lower().startswith(YES_NO) and " or " not in body.lower()})
+    return out
+
+
+def review_html(settings: Settings, item: Item, message: str = "", running: bool = False) -> str:
+    """The questions form and background details for one run (served at /review/SKU)."""
+    entry = run_entry(item, previews_dir(settings))  # photo paths ../derived/... work from /review/ too
+    if entry is None:
+        raise ValueError(f"{item.sku} has no assembled run")
+    env = Environment(loader=FileSystemLoader(TEMPLATES), autoescape=select_autoescape(["html"]))
+    return env.get_template("review.html").render(e=entry, fields=question_fields(entry["questions"]),
+                                                  message=message, running=running)
 
 
 def live_entry(live: dict) -> dict:
@@ -105,6 +138,14 @@ def live_entry(live: dict) -> dict:
         "problems": [],
         "photos": [{"src": url, "caption": ""} for url in live.get("photo_urls", [])],
     }
+
+
+def _safe_entry(item: Item, base: Path) -> dict | None:
+    """A run saved under an older schema is left out of the preview until it is re-run."""
+    try:
+        return run_entry(item, base)
+    except ValidationError:
+        return None
 
 
 def snapshot_live(settings: Settings) -> list[dict]:
@@ -139,7 +180,7 @@ def build(settings: Settings, store: Store) -> Path:
     """Rebuild data/previews/listings.html from every run and the cached live snapshot."""
     base = previews_dir(settings)
     base.mkdir(parents=True, exist_ok=True)
-    entries = [e for e in (run_entry(i, base) for i in store.list()) if e]
+    entries = [e for e in (_safe_entry(i, base) for i in store.list()) if e]
     # A live listing that also has a run (a rewrite draft) appears in both groups, for comparison.
     entries += [live_entry(r) for r in load_live(settings)]
     taken = ""

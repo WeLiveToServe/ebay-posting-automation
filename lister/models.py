@@ -127,11 +127,13 @@ class ListingFields(BaseModel):
     isbn: str = ""
     aspects: dict[str, str] = Field(default_factory=dict)
     description_html: str = ""
+    shipping_profile: str = ""  # fulfillment policy name; blank uses [seller] shipping_profile
 
 
 # --- Multi-agent run state (see lister/crew.py) ----------------------------------
 
 ROLE_ORDER = ("edition", "condition", "pricing", "description")
+Track = Literal["collector", "modern"]
 
 
 class Attempt(BaseModel):
@@ -165,8 +167,16 @@ class Assembled(BaseModel):
     assembled_at: str = Field(default_factory=utcnow)
 
 
+class Answer(BaseModel):
+    role: str
+    question: str
+    answer: str
+    answered_at: str = Field(default_factory=utcnow)
+
+
 class CrewRun(BaseModel):
     started_at: str = Field(default_factory=utcnow)
+    answers: list[Answer] = Field(default_factory=list)  # the seller's answers to open questions
     roles: dict[str, RoleState] = Field(default_factory=lambda: {r: RoleState() for r in ROLE_ORDER})
     assembled: Assembled | None = None
     signed_off_at: str = ""
@@ -178,6 +188,7 @@ class Item(BaseModel):
     created_at: str = Field(default_factory=utcnow)
     updated_at: str = Field(default_factory=utcnow)
     notes: str = ""
+    track: Track | None = None  # chosen by the seller; None falls back to the age rule
     shelf_location: str = ""
     cost: float | None = None
     photos: list[Photo] = Field(default_factory=list)

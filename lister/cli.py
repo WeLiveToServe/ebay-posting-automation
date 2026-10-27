@@ -11,7 +11,7 @@ from pathlib import Path
 
 from pydantic import ValidationError
 
-from . import account, agent, assemble, crew, export, photos, pipeline, preview, publish
+from . import account, agent, assemble, crew, driver, export, photos, pipeline, preview, publish
 from .config import load_settings
 from .models import Status
 from .store import Store
@@ -48,6 +48,7 @@ def cmd_ingest(args, settings, store) -> None:
             photos.add_photo(settings, item, f.name, f.read_bytes())
         notes = folder / "notes.txt"
         item.notes = notes.read_text(encoding="utf-8").strip() if notes.exists() else ""
+        item.track = args.track
         item.status = Status.QUEUED
         store.save(item)
         print(f"{item.sku}: {len(files)} photos from {folder.name}")
@@ -157,10 +158,24 @@ def cmd_ebay(args, settings, store) -> None:
         print(f"{args.item_id}: now managed as {item.sku} ({len(item.photos)} photos imported)")
 
 
-def _run_dir(settings, sku: str) -> Path:
-    path = settings.data_dir / "runs" / sku
-    path.mkdir(parents=True, exist_ok=True)
-    return path
+def cmd_track(args, settings, store) -> None:
+    item = _item(store, args.sku)
+    item.track = args.track
+    store.save(item)
+    print(f"{item.sku}: track {item.track}")
+
+
+def cmd_drive(args, settings, store) -> None:
+    """Run every role headless with code checks and retries; stops before sign-off."""
+    item = _item(store, args.sku)
+    if not item.track:
+        raise SystemExit(f"{item.sku} has no track; set it with `track {item.sku} collector|modern`")
+    if args.restart:
+        item.crew = None
+    run = driver.Driver(settings, store, item, engine=args.engine, dry_run=args.dry_run)
+    result = run.run(only=tuple(args.only or ()))
+    if result:
+        print(agent.dumps(result))
 
 
 def cmd_run(args, settings, store) -> None:
@@ -186,7 +201,6 @@ def cmd_run(args, settings, store) -> None:
         if item.crew is None or args.restart:
             item.crew = crew.CrewRun()
         store.save(item)
-        folder = _run_dir(settings, item.sku)
         print(agent.dumps({
             "sku": item.sku, "status": item.status.value, "notes": item.notes,
             "photos": [{"idx": p.idx, "path": p.derived} for p in item.photos],
@@ -195,24 +209,26 @@ def cmd_run(args, settings, store) -> None:
                 {"stage": 3, "roles": ["pricing", "description"], "parallel": True},
                 {"stage": 4, "code": f"run assemble {item.sku}"},
             ],
-            "files": {r: {"brief": str(folder / f"{r}.brief.md"), "output": str(folder / f"{r}.json")}
+            "track": item.track,
+            "files": {r: {"brief": str(driver.step_dir(settings, item.sku, r) / "brief.md"),
+                          "output": str(driver.step_dir(settings, item.sku, r) / "output.json")}
                       for r in crew.ORDER},
             "done": {r: bool(s.latest) for r, s in item.crew.roles.items()},
         }))
         return
 
     item = _item(store, args.sku)
-    folder = _run_dir(settings, item.sku)
+    folder = driver.step_dir(settings, item.sku, args.role) if getattr(args, "role", None) else None
     if args.action == "brief":
-        path = folder / f"{args.role}.brief.md"
+        path = folder / "brief.md"
         try:
-            path.write_text(crew.brief(item, args.role, folder / f"{args.role}.json",
+            path.write_text(crew.brief(item, args.role, folder / "output.json",
                                        settings.seller.ebay_username), encoding="utf-8")
         except ValueError as exc:
             raise SystemExit(str(exc))
         print(path)
     elif args.action == "save":
-        path = Path(args.file) if args.file else folder / f"{args.role}.json"
+        path = Path(args.file) if args.file else folder / "output.json"
         try:
             problems = crew.save(item, args.role, crew.load_json(path))
         except ValidationError as exc:
@@ -285,7 +301,22 @@ def main(argv: list[str] | None = None) -> None:
 
     p = sub.add_parser("ingest", help="Queue items from a folder of per-item photo folders")
     p.add_argument("folder")
+    p.add_argument("--track", choices=("collector", "modern"), required=True,
+                   help="collector (rare/antique: trade grading, dealer sources) or modern")
     p.set_defaults(func=cmd_ingest)
+
+    p = sub.add_parser("track", help="Set an item's track: collector or modern")
+    p.add_argument("sku")
+    p.add_argument("track", choices=("collector", "modern"))
+    p.set_defaults(func=cmd_track)
+
+    p = sub.add_parser("drive", help="Run all role agents headless with checks and retries (stops before sign-off)")
+    p.add_argument("sku")
+    p.add_argument("--engine", choices=("claude", "codex"), help="Overrides [orchestrator] engine")
+    p.add_argument("--only", nargs="+", choices=crew.ORDER, help="Re-run these roles and the later ones built on them (earlier results must exist)")
+    p.add_argument("--restart", action="store_true", help="Discard the existing run first")
+    p.add_argument("--dry-run", action="store_true", help="Print the agent commands without running them")
+    p.set_defaults(func=cmd_drive)
 
     p = sub.add_parser("process", help="Process queued/errored items now (no server needed)")
     p.add_argument("sku", nargs="*")

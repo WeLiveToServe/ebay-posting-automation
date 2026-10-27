@@ -137,13 +137,36 @@ def edition_facts(edition: EditionResult) -> list[tuple[str, str]]:
     return [(k, v) for k, v in rows if v]
 
 
+def listing_facts(edition: EditionResult) -> list[str]:
+    """The short facts list in the description, in the Psmith in the City style (no bold labels)."""
+    place = f", {edition.place}" if edition.place else ""
+    date = f"Dated {edition.year}" if edition.year_certain else f"Undated, c. {edition.year}"
+    rows = [
+        f"Title: {edition.title}" + (f": {edition.subtitle}" if edition.subtitle else ""),
+        f"Author: {edition.author}",
+        f"Edited by {edition.editor}" if edition.editor else None,
+        f"Publisher: {edition.publisher}{place}",
+        date,
+        f"Edition: {edition.edition}" if edition.edition_short else None,  # only when remarkable
+        f"Illustrated by {edition.illustrator}" if edition.illustrator else None,
+        f"{edition.volumes} volumes" if edition.volumes > 1 else None,
+        f"Binding: {edition.binding}" + ("" if edition.dust_jacket is None else
+                                         ", with dust jacket" if edition.dust_jacket else ""),
+        f"ISBN: {edition.isbn}" if edition.isbn else None,
+        f"Language: {edition.language}",
+    ]
+    return [r for r in rows if r]
+
+
 def description_html(edition: EditionResult, condition: ConditionResult, description: DescriptionResult) -> str:
-    parts = [f"<p>{escape(description.text.strip())}</p>"]
-    parts.append("<ul>" + "".join(f"<li><b>{escape(k)}:</b> {escape(v)}</li>" for k, v in edition_facts(edition)) + "</ul>")
-    parts.append(f"<p><b>Condition: {escape(condition.grade)}.</b> {escape(condition.summary.strip())}</p>")
-    if description.collector_line and description.collector_line.strip():
-        parts.append(f"<p>{escape(description.collector_line.strip())}</p>")
-    return "".join(parts)
+    """Blurb, facts list, condition paragraph: the layout of the Psmith in the City listing."""
+    text = crew.condition_text(condition)
+    grade, rest = text.split(". ", 1) if ". " in text else (text.rstrip("."), "")
+    return "".join([
+        f"<p>{escape(description.blurb.strip())}</p>",
+        "<ul>" + "".join(f"<li>{escape(r)}</li>" for r in listing_facts(edition)) + "</ul>",
+        f"<p><b>Condition:</b> {escape(grade)}. {escape(rest)}</p>",
+    ])
 
 
 # --- Aspects ------------------------------------------------------------------------
@@ -181,7 +204,7 @@ def assemble(item: Item) -> Assembled:
     condition: ConditionResult = crew.result(item, "condition")
     pricing: PricingResult = crew.result(item, "pricing")
     description: DescriptionResult = crew.result(item, "description")
-    old = crew.is_older(edition.year)
+    old = crew.collector(item, edition)
 
     problems = [f"{role}: {p}" for role in crew.ORDER for p in crew.check(item, role, crew.result(item, role))]
     problems += [f"{role}: result is stale (an earlier stage changed); re-run it"
@@ -242,11 +265,13 @@ def questions(item: Item, edition: EditionResult, condition: ConditionResult, pr
         out += [f"{role} (contrary evidence): {c}" for c in getattr(res, "contrary_evidence", [])]
     if not edition.edition_confirmed:
         out.append("edition: the edition is not confirmed by 2 matching sources; check it before listing")
+    if warning := crew.track_warning(item, edition):
+        out.append(f"track: {warning}")
     if not edition.year_certain:
         out.append(f"edition: the year {edition.year} is an estimate")
     if pricing.provisional:
         out.append(f"pricing: ${pricing.suggested:.2f} is provisional until the questions above are answered")
-    seen: set[str] = set()
+    seen: set[str] = {a.question for a in item.crew.answers} if item.crew else set()
     return [q for q in out if not (q in seen or seen.add(q))]
 
 

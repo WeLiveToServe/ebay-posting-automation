@@ -77,7 +77,18 @@ details.photos summary { cursor: pointer; font-weight: 600; padding: 6px 0; }
 .gallery figure { margin: 0; }
 .gallery img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 6px; border: 1px solid var(--line); }
 .gallery figcaption { font-size: 12px; color: var(--muted); }
+.draft-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 14px; color: var(--muted);
+  margin-bottom: 16px; }
+.review-link { margin-left: auto; padding: 6px 12px; border-radius: 8px; background: var(--accent);
+  color: var(--accent-ink); text-decoration: none; font-weight: 600; }
+.posting { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 20px; }
+.hero img.main { width: 100%; aspect-ratio: 1; object-fit: contain; background: var(--chip); border-radius: 8px; }
+.thumbs { display: flex; gap: 6px; overflow-x: auto; margin-top: 6px; }
+.thumbs img { width: 56px; height: 56px; object-fit: cover; border-radius: 4px; border: 1px solid var(--line); }
+.buybox h1 { font-size: 20px; }
+dl.specifics { font-size: 13px; margin-top: 12px; }
 .empty { color: var(--muted); padding: 40px 0; text-align: center; }
+@media (max-width: 680px) { .posting { grid-template-columns: 1fr; } }
 @media (max-width: 520px) {
   article.listing { padding: 16px; }
   dl { grid-template-columns: 1fr; gap: 0; }
@@ -103,52 +114,33 @@ details.photos summary { cursor: pointer; font-weight: 600; padding: 6px 0; }
 <main>
 {% for e in entries %}
 <article class="listing" id="{{ e.key }}" data-title="{{ e.title }}">
-  <h1>{{ e.title }}</h1>
-  <div class="sub">
-    {% if e.kind == 'live' %}<span class="badge live">Live</span>{% else %}<span class="badge">Run</span>{% endif %}
-    {% if e.sku %}{{ e.sku }} · {% endif %}{{ e.status }}{% if e.category %} · {{ e.category }}{% endif %}
-    {% if e.ebay_url %} · <a href="{{ e.ebay_url }}" target="_blank" rel="noopener">eBay listing</a>{% endif %}
-    {% if e.title|length %} · {{ e.title|length }}/80 chars{% endif %}
+{% if e.kind == 'run' %}
+  <div class="draft-bar">
+    <span class="badge">Draft</span> {{ e.sku }} · {{ e.status }}
+    <a class="review-link" href="{{ e.review_url }}">{% if e.questions %}Answer {{ e.questions|length }} question{{ 's' if e.questions|length != 1 }}{% else %}Review{% endif %}{% if e.problems %} · {{ e.problems|length }} problem{{ 's' if e.problems|length != 1 }}{% endif %} · details &rarr;</a>
   </div>
-  {% if e.problems %}<div class="box bad"><b>Problems to fix before sign-off</b><ul>{% for p in e.problems %}<li>{{ p }}</li>{% endfor %}</ul></div>{% endif %}
-  {% if e.questions %}<div class="box warn"><b>Open questions for you</b><ul>{% for q in e.questions %}<li>{{ q }}</li>{% endfor %}</ul></div>{% endif %}
-
-  <section><h4>Edition</h4>
-    {% if e.edition_rows %}<dl>{% for k, v in e.edition_rows %}<dt>{{ k }}</dt><dd>{{ v }}</dd>{% endfor %}</dl>
-    {% else %}<p class="sub">No item specifics.</p>{% endif %}
-    {% if e.age is defined %}<p class="sub" style="margin:8px 0 0">{{ e.age }} years old · {{ 'older' if e.older else 'newer' }} book</p>{% endif %}
-  </section>
-
-  <section><h4>Condition</h4>
-    {% if e.grade %}<div class="grade">{{ e.grade }}</div>{% endif %}
-    {% if e.condition_text %}<p>{{ e.condition_text }}</p>{% endif %}
-    {% if e.ebay_condition %}<p class="sub">eBay condition field: {{ e.ebay_condition }}</p>{% endif %}
-  </section>
-
-  <section><h4>Description</h4>
-    {% if e.kind == 'live' %}<iframe class="live-desc" sandbox title="Live description" srcdoc="{{ e.live_description }}"></iframe>
-    {% else %}<div class="desc">{{ e.description_html|safe }}</div>{% endif %}
-  </section>
-
-  <section><h4>Price</h4>
-    <div class="price">${{ '%.2f'|format(e.price.suggested) }}{% if e.price.provisional %} <span class="badge">provisional</span>{% endif %}</div>
-    {% if e.price.low is defined %}<div class="range">Range ${{ '%.2f'|format(e.price.low) }} – ${{ '%.2f'|format(e.price.high) }} · {{ e.price.confidence }} confidence</div>
-    <p>{{ e.price.reason }}</p>
-    <p class="sub">eBay history: {{ e.price.ebay_history }}</p>{% endif %}
-    {% if e.comps %}<div class="table-wrap"><table>
-      <thead><tr><th>Price</th><th>Status</th><th>Match</th><th>Edition · condition</th><th>Source</th></tr></thead>
-      <tbody>{% for c in e.comps %}<tr>
-        <td>${{ '%.2f'|format(c.price) }}{% if c.shipping %} +{{ '%.2f'|format(c.shipping) }}{% endif %}</td>
-        <td>{{ c.status }}{% if c.date %}<br><span class="sub">{{ c.date }}</span>{% endif %}</td>
-        <td>{{ c.match }}</td>
-        <td>{{ c.edition }} · {{ c.condition }}{% if c.note %}<br><span class="sub">{{ c.note }}</span>{% endif %}</td>
-        <td><a href="{{ c.url }}" target="_blank" rel="noopener">{{ c.source.replace('_', ' ') }}</a></td>
-      </tr>{% endfor %}</tbody></table></div>{% endif %}
-  </section>
-
-  <section><details class="photos"><summary>Photos ({{ e.photos|length }}, in listing order)</summary>
-    <div class="gallery">{% for p in e.photos %}<figure><a href="{{ p.src }}" target="_blank" rel="noopener"><img src="{{ p.src }}" alt="Photo {{ loop.index }}" loading="lazy"></a><figcaption>{{ loop.index }}. {{ p.caption }}</figcaption></figure>{% endfor %}</div>
+  <div class="posting">
+    {% if e.photos %}<div class="hero">
+      <a href="{{ e.photos[0].src }}" target="_blank" rel="noopener"><img class="main" src="{{ e.photos[0].src }}" alt="Main photo"></a>
+      <div class="thumbs">{% for p in e.photos %}<a href="{{ p.src }}" target="_blank" rel="noopener"><img src="{{ p.src }}" alt="Photo {{ loop.index }}" loading="lazy"></a>{% endfor %}</div>
+    </div>{% endif %}
+    <div class="buybox">
+      <h1>{{ e.title }}</h1>
+      <div class="price">${{ '%.2f'|format(e.price.suggested) }}</div>
+      <p class="sub">or Best Offer · Condition: {{ e.ebay_condition or e.grade }}</p>
+      {% if e.specifics %}<dl class="specifics">{% for k, v in e.specifics %}<dt>{{ k }}</dt><dd>{{ v }}</dd>{% endfor %}</dl>{% endif %}
+    </div>
+  </div>
+  <section><h4>Item description from the seller</h4><div class="desc">{{ e.description_html|safe }}</div></section>
+{% else %}
+  <h1>{{ e.title }}</h1>
+  <div class="sub"><span class="badge live">Live</span>{% if e.sku %}{{ e.sku }} · {% endif %}{{ e.status }}
+    · <a href="{{ e.ebay_url }}" target="_blank" rel="noopener">eBay listing</a></div>
+  <section><h4>Description</h4><iframe class="live-desc" sandbox title="Live description" srcdoc="{{ e.live_description }}"></iframe></section>
+  <section><details class="photos"><summary>Photos ({{ e.photos|length }})</summary>
+    <div class="gallery">{% for p in e.photos %}<figure><img src="{{ p.src }}" alt="Photo {{ loop.index }}" loading="lazy"></figure>{% endfor %}</div>
   </details></section>
+{% endif %}
 </article>
 {% else %}
 <p class="empty">Nothing to preview yet.</p>

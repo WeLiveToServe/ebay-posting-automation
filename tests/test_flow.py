@@ -173,10 +173,11 @@ def test_sku_sequence(tmp_path):
 
 def test_remote_access_requires_token(settings):
     app = create_app(replace(settings, server=replace(settings.server, access_token="s3cret")), start_worker=False)
-    client = TestClient(app)
+    client = TestClient(app, client=("192.168.1.20", 50000))  # another device on the LAN
     assert client.get("/").status_code == 401
     assert client.get("/?token=s3cret").status_code == 200
     assert client.get("/").status_code == 200  # cookie set
+    assert TestClient(app).get("/").status_code == 200  # this computer needs no token
 
 
 def test_schemas_are_valid_for_structured_outputs():

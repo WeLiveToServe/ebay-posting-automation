@@ -12,3 +12,6 @@ __pycache__/
 # Local tools / Office lock files
 ngrok.exe
 ~$*
+
+# Personal collection inventories (kept local)
+wodehouse/

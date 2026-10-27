@@ -20,10 +20,10 @@ relabel it" (edition). Avoid vague notes like "check again".
 - [ ] `cover_illustrated` is right: is the front cover pictorial, or plain cloth?
 
 ## Condition (condition agent)
-- [ ] The grade fits the photos, judged relative to the book's age, and is not inflated.
-- [ ] The summary is 1–2 plain sentences and names only substantial defects.
-- [ ] No minor discoloration or age-toning is mentioned.
-- [ ] Nothing in the photos contradicts it, such as a visible tear that isn't mentioned.
+- [ ] The grade fits the trade definitions, judged absolutely (not raised for age).
+- [ ] Every visible defect is disclosed in its area; nothing is invented.
+- [ ] Ex-library, book club and jacket grade are right.
+- [ ] The paragraph reads like the Psmith in the City example: positives, wear outside in, verdict.
 
 ## Pricing (pricing agent)
 - [ ] There are 5 or more eBay prices, or a question explains why not.
@@ -35,10 +35,8 @@ relabel it" (edition). Avoid vague notes like "check again".
 - [ ] None of the comps are the seller's own listings.
 
 ## Description (description agent)
-- [ ] It is about the work, the author and this edition, with no condition or price talk.
-- [ ] It praises both the author and the title if the book is well known. If it is lesser known,
-      it leans on the author or on scarcity.
-- [ ] Older book: it ends with a collector line that fits the book.
+- [ ] The blurb is 2–4 sentences: the work first, then this copy's edition and best feature.
+- [ ] No condition, price or hype.
 - [ ] Every factual claim is supported by the edition facts or is well-established knowledge.
       Nothing is invented.
 

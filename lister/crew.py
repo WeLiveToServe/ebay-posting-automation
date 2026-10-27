@@ -23,7 +23,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, ValidationError
 
-from .models import ROLE_ORDER, Aspect, Attempt, CrewRun, Item, utcnow
+from .models import ROLE_ORDER, Answer, Aspect, Attempt, CrewRun, Item, utcnow
 
 ROLES_DIR = Path(__file__).parent / "roles"
 OLDER_YEARS = 40  # a book this many years old or more is "older"
@@ -133,13 +133,52 @@ class EditionResult(BaseModel):
                                          description="Evidence that contradicts the seller's notes (notes still win).")
 
 
+# Areas inspected, in the order the condition paragraph describes them (outside in).
+AREAS = ("jacket", "boards", "spine", "corners_edges", "hinges", "text_block", "plates", "marks", "repairs")
+ConditionArea = Literal[AREAS]  # type: ignore[valid-type]
+
+
+class AreaNote(BaseModel):
+    area: ConditionArea
+    notable: bool = Field(description="False when there is nothing worth telling a buyer; the area is then left "
+                                      "out of the paragraph.")
+    sentence: str = Field("", description="Notable areas: one plain buyer-facing sentence naming every defect in "
+                                          "this area. Empty when not notable.")
+    photos: list[int] = Field(default_factory=list, description="idx of the photos that show it (notable areas).")
+
+
 class ConditionResult(BaseModel):
     grade: str = Field(description="One grade from the scale given in the brief.")
-    summary: str = Field(description="1-2 sentences for an amateur collector: the grade's meaning and only substantial defects.")
-    defects: list[str] = Field(default_factory=list, description="Substantial defects only, one per entry.")
+    modifier: Literal["+", "-"] | None = Field(None, description="Optional: slightly better (+) or worse (-) than the grade.")
+    jacket_grade: str | None = Field(None, description="The dust jacket's own grade, when the book has one.")
+    ex_library: bool = Field(description="True for any ex-library copy (stamps, pockets, spine labels, withdrawn marks).")
+    book_club: bool = False
+    positives: list[str] = Field(description="1-2 sentences on what is good about the copy, said first.")
+    areas: list[AreaNote] = Field(description="One entry for every area listed in the brief, notable or not.")
+    verdict: str = Field(description="One closing sentence, e.g. 'A sound, honest copy of a book now over 100 years old.'")
     questions: list[str] = Field(default_factory=list)
     contrary_evidence: list[str] = Field(default_factory=list,
                                          description="Evidence that the given edition facts are wrong. Report; don't override.")
+
+
+def grade_label(c: ConditionResult) -> str:
+    label = c.grade + (c.modifier or "")
+    if c.ex_library:
+        label = f"Ex-library, {label}"
+    if c.book_club:
+        label += ", book club edition"
+    if c.jacket_grade:
+        label += f", in a {c.jacket_grade} dust jacket"
+    return label
+
+
+def condition_text(c: ConditionResult) -> str:
+    """The buyer-facing paragraph: grade, positives, notable areas outside in, verdict."""
+    order = {a: n for n, a in enumerate(AREAS)}
+    notes = sorted((a for a in c.areas if a.notable and a.sentence.strip()), key=lambda a: order[a.area])
+    parts = [f"{grade_label(c)}."] + [p.strip() for p in c.positives] + [a.sentence.strip() for a in notes]
+    parts.append(c.verdict.strip())
+    return " ".join(p if p.endswith((".", "!", "?")) else p + "." for p in parts if p)
 
 
 SourceKey = Literal[
@@ -193,8 +232,8 @@ class PricingResult(BaseModel):
 
 class DescriptionResult(BaseModel):
     fame: Literal["well_known", "lesser_known"] = Field(description="How well known this title is.")
-    text: str = Field(description="2-5 sentences about the work, the author and this edition. No condition, no price.")
-    collector_line: str | None = Field(description="Closing collector line; required for older books, optional otherwise.")
+    blurb: str = Field(description="2-4 sentences: the story or work, then this copy's edition and its most "
+                                   "attractive feature. No condition defects, no price, no fact list.")
     questions: list[str] = Field(default_factory=list)
 
 
@@ -227,7 +266,30 @@ def result(item: Item, role: str):
 
 def older(item: Item) -> bool | None:
     edition = result(item, "edition")
-    return is_older(edition.year) if edition else None
+    return collector(item, edition) if edition else None
+
+
+def collector(item: Item, edition: EditionResult | None = None) -> bool:
+    """Collector track: the user's choice when set (`--track`), otherwise the age rule."""
+    if item.track:
+        return item.track == "collector"
+    return is_older((edition or result(item, "edition")).year)
+
+
+def condition_areas(edition: EditionResult) -> tuple[str, ...]:
+    return AREAS if edition.dust_jacket else tuple(a for a in AREAS if a != "jacket")
+
+
+def sentences(text: str) -> int:
+    return len([s for s in re.split(r"(?<=[.!?])\s+", text.strip()) if s])
+
+
+def track_warning(item: Item, edition: EditionResult) -> str:
+    """A sanity note when the user's track disagrees with the age rule (never blocking)."""
+    if item.track and (item.track == "collector") != is_older(edition.year):
+        return (f"track is {item.track} but the book is {age(edition.year)} years old; "
+                "check the track is intended")
+    return ""
 
 
 # --- Briefs -----------------------------------------------------------------------
@@ -263,13 +325,15 @@ def brief(item: Item, role: str, out_path: Path, ebay_username: str = "") -> str
         parts += [f"- idx {p.idx}: {p.derived}" for p in item.photos]
     else:
         edition = result(item, "edition")
-        yrs = age(edition.year)
-        parts += ["", f"Age: {yrs} years -> {'OLDER' if yrs >= OLDER_YEARS else 'NEWER'} book "
-                      f"(older = {OLDER_YEARS}+ years)."]
+        old = collector(item, edition)
+        source = f"set by the seller ({item.track})" if item.track else f"from age, {OLDER_YEARS}+ years = older"
+        parts += ["", f"Age: {age(edition.year)} years. Track: {'OLDER (collector)' if old else 'NEWER (modern)'} "
+                      f"book, {source}."]
         if role == "condition":
-            parts += [f"Grade scale for this book: {', '.join(grade_scale(yrs >= OLDER_YEARS))}."]
+            parts += [f"Grade scale for this book: {', '.join(grade_scale(old))}.",
+                      f"Areas to report, one `areas` entry each: {', '.join(condition_areas(edition))}."]
         if role == "pricing":
-            parts += [f"Required sources for this book: {', '.join(REQUIRED_SOURCES[yrs >= OLDER_YEARS])}."]
+            parts += [f"Required sources for this book: {', '.join(REQUIRED_SOURCES[old])}."]
             if ebay_username:
                 parts += [f"The seller's own eBay user is `{ebay_username}`: their listings are never comparables."]
         labels = {p.idx: p for p in edition.photos}
@@ -318,6 +382,31 @@ def save(item: Item, role: str, data: dict) -> list[str]:
     return problems
 
 
+def dependents(roles: tuple[str, ...] | list[str]) -> tuple[str, ...]:
+    """These roles plus every later role built on them, in run order."""
+    out = set(roles)
+    for later in ORDER:
+        if any(n in out for n in ROLES[later].needs):
+            out.add(later)
+    return tuple(r for r in ORDER if r in out)
+
+
+def question_role(question: str) -> str:
+    """The role a tagged question ("pricing: ...", "edition (contrary evidence): ...") belongs to."""
+    tag = question.split(":", 1)[0].split(" (")[0].strip()
+    return tag if tag in ROLES else "edition"
+
+
+def answer(item: Item, question: str, text: str) -> str:
+    """Record the seller's answer as a correction to the question's role; returns the role."""
+    role = question_role(question)
+    body = question.split(": ", 1)[1] if ": " in question else question
+    correct(item, role, f'The seller answered your question "{body}": {text.strip()} '
+                        "(a first-hand fact; act on it and drop the question).")
+    item.crew.answers.append(Answer(role=role, question=question, answer=text.strip()))
+    return role
+
+
 def correct(item: Item, role: str, text: str) -> None:
     _start(item).roles[role].corrections.append(text.strip())
     item.crew.signed_off_at = ""
@@ -333,7 +422,7 @@ def check(item: Item, role: str, parsed: BaseModel) -> list[str]:
             problems.append(f"photos not labelled: {sorted(photo_ids - labelled)}")
         if labelled - photo_ids:
             problems.append(f"labels for photos that don't exist: {sorted(labelled - photo_ids)}")
-        if is_older(parsed.year):
+        if collector(item, parsed):
             compared = [s for s in parsed.sources if s.images_compared]
             matching = [s for s in compared if s.matches]
             if len(compared) < 2:
@@ -344,13 +433,34 @@ def check(item: Item, role: str, parsed: BaseModel) -> list[str]:
         if parsed.edition_short and len(parsed.edition_short) > 20:
             problems.append("edition_short is over 20 characters")
         return problems
-    edition = result(item, "edition")
-    old = is_older(edition.year)
+    old = collector(item)
     if role == "condition":
+        edition = result(item, "edition")
         problems += grade_problems(parsed.grade, old)
-        sentences = len([s for s in re.split(r"(?<=[.!?])\s+", parsed.summary.strip()) if s])
-        if sentences > 2:
-            problems.append(f"condition summary is {sentences} sentences (max 2)")
+        if parsed.jacket_grade:
+            problems += [f"jacket {p}" for p in grade_problems(parsed.jacket_grade, old)]
+        if parsed.modifier and not old:
+            problems.append("+/- modifiers are for the collector scale only")
+        if edition.dust_jacket and not parsed.jacket_grade:
+            problems.append("the book has a dust jacket: give jacket_grade")
+        seen = [a.area for a in parsed.areas]
+        missing = [a for a in condition_areas(edition) if a not in seen]
+        if missing:
+            problems.append(f"areas not reported: {', '.join(missing)}")
+        if dupes := sorted({a for a in seen if seen.count(a) > 1}):
+            problems.append(f"areas reported more than once: {', '.join(dupes)}")
+        photo_ids = {p.idx for p in item.photos}
+        for a in parsed.areas:
+            if a.notable and not a.sentence.strip():
+                problems.append(f"{a.area} is notable but has no sentence")
+            if a.notable and not a.photos:
+                problems.append(f"{a.area}: cite the photo(s) that show it")
+            if bad := [i for i in a.photos if i not in photo_ids]:
+                problems.append(f"{a.area}: photos {bad} don't exist")
+        if not 1 <= len(parsed.positives) <= 2:
+            problems.append("give 1-2 positives")
+        if sentences(parsed.verdict) != 1:
+            problems.append("verdict must be exactly one sentence")
     elif role == "pricing":
         if not parsed.low <= parsed.suggested <= parsed.high:
             problems.append("suggested price is outside the low-high range")
@@ -366,10 +476,11 @@ def check(item: Item, role: str, parsed: BaseModel) -> list[str]:
         if any(not c.url.startswith("http") for c in parsed.comps):
             problems.append("every comparable needs its URL")
     elif role == "description":
-        if old and not (parsed.collector_line or "").strip():
-            problems.append("older book: a collector line is required")
-        if re.search(r"\$\s?\d", parsed.text):
-            problems.append("description text must not mention a price")
+        n = sentences(parsed.blurb)
+        if not 2 <= n <= 4:
+            problems.append(f"blurb is {n} sentences (2-4)")
+        if re.search(r"\$\s?\d", parsed.blurb):
+            problems.append("blurb must not mention a price")
     return problems
 
 

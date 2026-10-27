@@ -1,0 +1,38 @@
+# Price source registry. `required` sources must be checked (or reported unreachable).
+# `login = true` needs the user's logged-in browser.
+
+[collector]
+required = [
+  { name = "eBay sold (Terapeak)", url = "https://www.ebay.com/sh/research", login = true, kind = "sold" },
+  { name = "eBay sold (90 day)", url = "https://www.ebay.com/sch/i.html?LH_Sold=1&LH_Complete=1", kind = "sold" },
+  { name = "AbeBooks", url = "https://www.abebooks.com", kind = "ask" },
+  { name = "AbeBooks UK", url = "https://www.abebooks.co.uk", kind = "ask" },
+  { name = "Biblio", url = "https://www.biblio.com", kind = "ask" },
+  { name = "viaLibri", url = "https://www.vialibri.net", kind = "ask" },
+  { name = "LiveAuctioneers", url = "https://www.liveauctioneers.com", kind = "sold" },
+  { name = "Invaluable", url = "https://www.invaluable.com", kind = "sold" },
+  { name = "PBA Galleries", url = "https://www.pbagalleries.com", kind = "sold" },
+]
+optional = [
+  { name = "Rare Book Hub", url = "https://www.rarebookhub.com", login = true, kind = "sold" },
+  { name = "Heritage Auctions", url = "https://www.ha.com", kind = "sold" },
+  { name = "WorthPoint", url = "https://www.worthpoint.com", login = true, kind = "sold" },
+]
+# Scout adds per-author entries (bibliographies, societies, specialist dealers) to
+# data/runs/SKU/pricing/dossier.json.
+
+[collector.authors.wodehouse]
+notes = "Edition points: McIlvaine bibliography. Specialist dealers and societies to be seeded by user."
+
+[modern]
+required = [
+  { name = "eBay sold (90 day)", url = "https://www.ebay.com/sch/i.html?LH_Sold=1&LH_Complete=1", kind = "sold" },
+  { name = "Amazon", url = "https://www.amazon.com", kind = "ask" },
+  { name = "Barnes & Noble", url = "https://www.barnesandnoble.com", kind = "ask" },
+  { name = "AbeBooks", url = "https://www.abebooks.com", kind = "ask" },
+  { name = "ThriftBooks", url = "https://www.thriftbooks.com", kind = "ask" },
+  { name = "BookFinder", url = "https://www.bookfinder.com", kind = "ask" },
+]
+optional = [
+  { name = "eBay sold (Terapeak)", url = "https://www.ebay.com/sh/research", login = true, kind = "sold" },
+]

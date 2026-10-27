@@ -65,7 +65,7 @@ class EbaySell:
         self._auth = (cfg.ebay_client_id, cfg.ebay_client_secret)
         self._token = ""
         self._expires = 0.0
-        self._policies: dict[str, str] | None = None
+        self._policies: dict[str, dict[str, str]] = {}
 
     def _bearer(self) -> str:
         if time.time() < self._expires - 60:
@@ -96,11 +96,12 @@ class EbaySell:
             time.sleep(5 * (attempt + 1))
         return resp
 
-    def policy_ids(self) -> dict[str, str]:
-        """Look up the configured business policies by name."""
-        if self._policies is None:
+    def policy_ids(self, shipping_profile: str = "") -> dict[str, str]:
+        """Look up the configured business policies by name (a listing may name its own shipping policy)."""
+        shipping_profile = shipping_profile or self.settings.seller.shipping_profile
+        if shipping_profile not in self._policies:
             seller = self.settings.seller
-            wanted = {"fulfillment": seller.shipping_profile, "payment": seller.payment_profile,
+            wanted = {"fulfillment": shipping_profile, "payment": seller.payment_profile,
                       "return": seller.return_profile}
             ids = {}
             for kind, name in wanted.items():
@@ -112,8 +113,8 @@ class EbaySell:
                     names = ", ".join(repr(p["name"]) for p in policies)
                     raise EbayError(f"No {kind} policy named {name!r} in config.toml [seller]; eBay has: {names}")
                 ids[f"{kind}PolicyId"] = match[0]
-            self._policies = ids
-        return self._policies
+            self._policies[shipping_profile] = ids
+        return self._policies[shipping_profile]
 
     def ensure_location(self) -> str:
         seller = self.settings.seller
@@ -156,7 +157,7 @@ class EbaySell:
         listing, cfg = item.listing, self.settings.listing
         if cfg.format not in FORMATS:
             raise EbayError(f"Listing format {cfg.format!r} is not supported for API publishing")
-        policies: dict = dict(self.policy_ids())
+        policies: dict = dict(self.policy_ids(listing.shipping_profile))
         if cfg.best_offer:
             terms: dict = {"bestOfferEnabled": True}
             if cfg.best_offer_auto_accept:

@@ -71,7 +71,7 @@ def row(settings: Settings, item: Item) -> dict[str, str]:
         "Format": settings.listing.format,
         "Duration": settings.listing.duration,
         "Location": settings.seller.location,
-        "Shipping profile name": settings.seller.shipping_profile,
+        "Shipping profile name": listing.shipping_profile or settings.seller.shipping_profile,
         "Return profile name": settings.seller.return_profile,
         "Payment profile name": settings.seller.payment_profile,
     }

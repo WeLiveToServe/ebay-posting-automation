@@ -42,7 +42,12 @@ def edition_data(year=1919, n_photos=4, **over) -> dict:
     return {**data, **over}
 
 
-CONDITION = {"grade": "Near Fine", "summary": "A bright, tight copy; the corners show light wear.", "defects": []}
+AREA_NAMES = ("boards", "spine", "corners_edges", "hinges", "text_block", "plates", "marks", "repairs")
+CONDITION = {"grade": "Near Fine", "ex_library": False, "positives": ["A bright, tight copy."],
+             "areas": [{"area": a, "notable": a == "corners_edges",
+                        "sentence": "The corners show light wear." if a == "corners_edges" else "",
+                        "photos": [1] if a == "corners_edges" else []} for a in AREA_NAMES],
+             "verdict": "A sound copy."}
 
 
 def pricing_data(older=True, **over) -> dict:
@@ -58,8 +63,8 @@ def pricing_data(older=True, **over) -> dict:
     return {**data, **over}
 
 
-DESCRIPTION = {"fame": "lesser_known", "text": "An underappreciated gem from early Wodehouse.",
-               "collector_line": "Perfect for a Wodehouse collector."}
+DESCRIPTION = {"fame": "lesser_known", "blurb": "An early Psmith novel set in a London bank. "
+                                                "This copy is bound in bright pictorial cloth."}
 
 
 def jpeg(color="red") -> bytes:
@@ -116,11 +121,24 @@ def test_condition_mapping_for_older_books():
     assert "1000" not in {crew.ebay_condition_id(g) for g in crew.NEWER_GRADES + crew.OLDER_GRADES}
 
 
-def test_condition_save_rejects_bad_grade_and_long_note(settings, store):
+def test_condition_save_rejects_bad_grade_and_missing_areas(settings, store):
     item = make_item(settings, store)
-    crew.save(item, "edition", edition_data())
-    problems = crew.save(item, "condition", {"grade": "Like New", "summary": "One. Two. Three."})
-    assert any("Like New" in p for p in problems) and any("3 sentences" in p for p in problems)
+    crew.save(item, "edition", edition_data(dust_jacket=True))
+    bad = {**CONDITION, "grade": "Like New", "areas": [{"area": "spine", "notable": True, "sentence": "Faded.",
+                                                         "photos": [9]}], "verdict": "One. Two."}
+    problems = crew.save(item, "condition", bad)
+    for want in ("Like New", "jacket_grade", "areas not reported", "photos [9]", "one sentence"):
+        assert any(want in p for p in problems), want
+
+
+def test_condition_text_reads_in_order():
+    c = crew.ConditionResult.model_validate({**CONDITION, "grade": "Good", "modifier": "+", "ex_library": True,
+                                             "jacket_grade": "Fair", "areas": [
+        {"area": "text_block", "notable": True, "sentence": "Page edges toned", "photos": [1]},
+        {"area": "boards", "notable": True, "sentence": "Cloth lightly soiled.", "photos": [1]},
+        {"area": "spine", "notable": False}]})
+    assert crew.condition_text(c) == ("Ex-library, Good+, in a Fair dust jacket. A bright, tight copy. "
+                                      "Cloth lightly soiled. Page edges toned. A sound copy.")
 
 
 # --- Title -------------------------------------------------------------------------
@@ -221,15 +239,15 @@ def test_pricing_checks(settings, store):
     newer = pricing_data(older=False)
     item2 = make_item(settings, store)
     crew.save(item2, "edition", edition_data(year=THIS_YEAR - 3, sources=[]))
-    crew.save(item2, "condition", {"grade": "Very Good", "summary": "Clean copy."})
+    crew.save(item2, "condition", {**CONDITION, "grade": "Very Good"})
     assert crew.save(item2, "pricing", newer) == []
 
 
-def test_description_needs_collector_line_when_older(settings, store):
+def test_description_blurb_length_and_price(settings, store):
     item = make_item(settings, store)
     crew.save(item, "edition", edition_data())
-    problems = crew.save(item, "description", {**DESCRIPTION, "collector_line": None, "text": "Worth $300."})
-    assert any("collector line" in p for p in problems) and any("price" in p for p in problems)
+    problems = crew.save(item, "description", {**DESCRIPTION, "blurb": "Worth $300."})
+    assert any("1 sentences" in p for p in problems) and any("price" in p for p in problems)
 
 
 # --- Briefs, corrections, staleness -------------------------------------------------
@@ -270,8 +288,9 @@ def test_assemble_builds_a_clean_listing(settings, store):
     assert listing.condition_id == "4000" and listing.grade == "Near Fine"
     assert listing.photo_order == [2, 4, 3, 1]  # cover, spine, title page, angle last
     assert "Bogus" not in listing.aspects and listing.aspects["Author"] == "P. G. Wodehouse"
-    assert "Condition: Near Fine." in listing.description_html
-    assert listing.description_html.endswith("<p>Perfect for a Wodehouse collector.</p>")
+    assert "<b>Condition:</b> Near Fine. A bright" in listing.description_html
+    assert "<li>Author: P. G. Wodehouse</li>" in listing.description_html
+    assert listing.description_html.endswith("A sound copy.</p>")
 
 
 def test_assemble_reports_stale_and_questions(settings, store):
@@ -319,11 +338,11 @@ def test_cli_run_flow(settings, store, monkeypatch, capsys):
     for role, data in (("edition", edition_data()), ("condition", CONDITION), ("pricing", pricing_data()),
                        ("description", DESCRIPTION)):
         cli.main(["run", "brief", item.sku, role])
-        assert (folder / f"{role}.brief.md").exists()
-        (folder / f"{role}.json").write_text(json.dumps(data), encoding="utf-8")
+        assert (folder / role / "brief.md").exists()
+        (folder / role / "output.json").write_text(json.dumps(data), encoding="utf-8")
         cli.main(["run", "save", item.sku, role])
         assert json.loads(capsys.readouterr().out.split("\n", 1)[1])["problems"] == []
-    (folder / "condition.json").write_text("{}", encoding="utf-8")
+    (folder / "condition" / "output.json").write_text("{}", encoding="utf-8")
     with pytest.raises(SystemExit):
         cli.main(["run", "save", item.sku, "condition"])
     assert "schema_errors" in capsys.readouterr().out
@@ -348,7 +367,7 @@ def test_preview_has_every_listing_and_the_menu(settings, store):
     first, second = make_item(settings, store), make_item(settings, store, n_photos=3)
     full_run(first)
     full_run(second, edition=edition_data(year=THIS_YEAR - 2, n_photos=3, sources=[], title="Newer Book"),
-             pricing=pricing_data(older=False), condition={"grade": "Very Good", "summary": "Clean."})
+             pricing=pricing_data(older=False), condition={**CONDITION, "grade": "Very Good"})
     store.save(first), store.save(second)
     preview.live_path(settings).parent.mkdir(parents=True, exist_ok=True)
     preview.live_path(settings).write_text(json.dumps(LIVE), encoding="utf-8")
@@ -361,9 +380,30 @@ def test_preview_has_every_listing_and_the_menu(settings, store):
     assert "../derived/" in html  # local photos, relative to the preview file
     assert "srcdoc=\"&lt;p&gt;Live &lt;b&gt;text" in html  # live descriptions are sandboxed
     article = html[html.index(f'id="{first.sku}"'):]
-    order = [article.index(h) for h in ("<h1>", "<h4>Edition", "<h4>Condition", "<h4>Description",
-                                        "<h4>Price", "<details class=\"photos\"")]
+    order = [article.index(h) for h in ("review-link", "class=\"main\"", "<h1>", "class=\"price\"",
+                                        "Item description from the seller")]
     assert order == sorted(order)
+    assert "<h4>Price" not in article.split("</article>")[0]  # background lives on the review page
+
+
+def test_review_page_answers_rerun_roles(settings, store, monkeypatch):
+    from lister.web import app as web
+
+    item = make_item(settings, store)
+    full_run(item, condition={**CONDITION, "questions": ["Is the text block tight?"]})
+    store.save(item)
+    started = []
+    monkeypatch.setattr(web.subprocess, "Popen", lambda cmd, **kw: started.append(cmd))
+    client = TestClient(create_app(settings, start_worker=False))
+    page = client.get(f"/review/{item.sku}").text
+    assert "Is the text block tight?" in page and 'value="Yes"' in page
+    resp = client.post(f"/review/{item.sku}", data={"question_0": "condition: Is the text block tight?",
+                                                    "choice_0": "Yes", "answer_0": "firm"}, follow_redirects=False)
+    assert resp.status_code == 303 and "re-running" in resp.headers["location"]
+    saved = store.get(item.sku)
+    assert "Yes firm" in saved.crew.roles["condition"].corrections[-1]
+    assert saved.crew.assembled.questions == []
+    assert started[0][3:] == ["drive", item.sku, "--only", "condition"]
 
 
 def test_preview_route_and_photos_served(settings, store):
@@ -376,3 +416,56 @@ def test_preview_route_and_photos_served(settings, store):
     src = page.text.split('<img src="', 1)[1].split('"', 1)[0]
     assert src.startswith("../derived/")
     assert client.get("/" + src.removeprefix("../")).status_code == 200
+
+
+# --- Track and driver ----------------------------------------------------------------
+
+
+def test_track_overrides_age_rule(settings, store):
+    item = make_item(settings, store)
+    crew.save(item, "edition", edition_data(year=THIS_YEAR - 10))
+    assert crew.collector(item) is False
+    item.track = "collector"
+    assert crew.collector(item) is True
+    assert "track is collector" in crew.track_warning(item, crew.result(item, "edition"))
+    assert crew.grade_problems("Like New", crew.collector(item))
+
+
+def test_driver_retries_with_corrections_then_assembles(settings, store, monkeypatch):
+    from lister import driver
+
+    item = make_item(settings, store)
+    item.track = "collector"
+    store.save(item)
+    outputs = {"edition": [edition_data()], "pricing": [pricing_data()], "description": [DESCRIPTION],
+               "condition": [{**CONDITION, "grade": "Like New"}, CONDITION]}  # first try breaks a rule
+    calls = []
+
+    def fake_call(self, role, prompt, engine, log_path):
+        folder = driver.step_dir(settings, item.sku, role)
+        if log_path.name.startswith("eval"):  # independent evaluator: pass
+            (folder / "eval.json").write_text('{"pass": true, "fixes": []}', encoding="utf-8")
+            return
+        calls.append(role)
+        out = folder / "output.json"
+        out.write_text(json.dumps(outputs[role].pop(0)), encoding="utf-8")
+
+    monkeypatch.setattr(driver.Driver, "call", fake_call)
+    result = driver.Driver(settings, store, item).run()
+    assert calls.count("condition") == 2
+    assert result["roles"]["condition"] == {"rounds": 2, "ok": True, "problems": []}
+    assert "Like New" in item.crew.roles["condition"].corrections[0]
+    assert result["problems"] == [] and result["status"].startswith("assembled")
+
+
+def test_driver_commands():
+    from lister import driver
+    from lister.config import Orchestrator
+
+    from pathlib import Path
+
+    settings = Settings(data_dir=Path("."), orchestrator=Orchestrator(
+        roles={"pricing": {"claude": "opus", "effort": "high", "chrome": True}}))
+    cmd = driver.command(settings, "pricing", "go", "claude")
+    assert cmd[:3] == ["claude", "-p", "go"] and "--chrome" in cmd and "opus" in cmd
+    assert driver.command(settings, "edition", "go", "codex")[:2] == ["codex", "exec"]

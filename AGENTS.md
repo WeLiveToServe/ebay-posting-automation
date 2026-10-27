@@ -22,6 +22,13 @@ Run commands from the repo root with the project venv:
   questions.
 - The user's own eBay listings (`[seller] ebay_username`) are never comparables.
 
+## Workflow A0: code-driven run (`drive`)
+
+`ingest <folder> --track collector|modern` (or `track SKU collector|modern`), then
+`drive SKU [--engine claude|codex] [--only ROLE...]`. Code runs every role headless with checks,
+corrections and up to 3 rounds, in `data/runs/SKU/<role>/`, then assembles and stops. Sign-off and
+publishing stay manual. See `docs/PLAN.md`.
+
 ## Workflow A: multi-agent listing run (new books)
 
 You are the **orchestrator**. You don't write the listing yourself. You start one role agent per

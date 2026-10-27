@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import hmac
+import subprocess
+import sys
 import threading
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -13,8 +15,8 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Redirect
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from .. import categories, export, photos, pipeline, preview, pricing
-from ..config import Settings, load_settings
+from .. import assemble, categories, crew, export, photos, pipeline, preview, pricing
+from ..config import ROOT, Settings, load_settings
 from ..models import Item, Status
 from ..store import Store
 
@@ -47,7 +49,8 @@ def create_app(settings: Settings | None = None, start_worker: bool = True) -> F
     @app.middleware("http")
     async def auth(request: Request, call_next):
         token = settings.server.access_token
-        if token:
+        local = bool(request.client and request.client.host in LOCAL_HOSTS)
+        if token and not local:  # the token guards other devices; this computer is trusted
             supplied = request.query_params.get("token") or request.cookies.get(COOKIE, "")
             if not hmac.compare_digest(supplied, token):
                 return Response("Unauthorized. Open this page once with ?token=<LISTER_ACCESS_TOKEN>.", 401)
@@ -204,7 +207,44 @@ def create_app(settings: Settings | None = None, start_worker: bool = True) -> F
     @app.get("/preview", response_class=HTMLResponse)
     def preview_page():
         """The multi-agent preview, rebuilt on each request (live listings come from the cached snapshot)."""
-        return HTMLResponse(preview.build(settings, store).read_text(encoding="utf-8"))
+        return HTMLResponse(preview.build(settings, store).read_text(encoding="utf-8"),
+                            headers={"Cache-Control": "no-store"})
+
+    @app.get("/review/{sku}", response_class=HTMLResponse)
+    def review_run(sku: str, msg: str = "", running: bool = False):
+        """Questions form and background for one multi-agent run."""
+        try:
+            return HTMLResponse(preview.review_html(settings, load(sku), msg, running))
+        except ValueError as exc:
+            raise HTTPException(404, str(exc))
+
+    @app.post("/review/{sku}")
+    async def answer_questions(sku: str, request: Request):
+        """Store answers as corrections to the asking roles, then re-run those roles in the background."""
+        item = load(sku)
+        form = await request.form()
+        roles: list[str] = []
+        for key in form:
+            if not key.startswith("question_"):
+                continue
+            n = key.removeprefix("question_")
+            text = " ".join(t for t in (str(form.get(f"choice_{n}", "")), str(form.get(f"answer_{n}", "")).strip()) if t)
+            if text:
+                roles.append(crew.answer(item, str(form[key]), text))
+        if not roles:
+            return RedirectResponse(f"/review/{sku}?msg=No+answers+given", 303)
+        try:
+            assemble.assemble(item)  # answered questions leave the list right away
+        except ValueError:
+            pass
+        store.save(item)
+        log_path = settings.data_dir / "runs" / sku / "drive.log"
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        with log_path.open("a", encoding="utf-8") as log_file:
+            subprocess.Popen([sys.executable, "-m", "lister", "drive", sku, "--only", *sorted(set(roles))],
+                             cwd=ROOT, stdout=log_file, stderr=log_file, start_new_session=True)
+        rerun = ", ".join(crew.dependents(sorted(set(roles))))
+        return RedirectResponse(f"/review/{sku}?running=true&msg={quote(f'{len(roles)} answers saved; re-running {rerun}.')}", 303)
 
     @app.get("/exports/{name}")
     def download(name: str):
